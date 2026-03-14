@@ -1,606 +1,401 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MDL Management Information System Prototype</title>
-    <!-- Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Font -->
-    <link
-      rel="preconnect"
-      href="https://fonts.googleapis.com"
-    />
-    <link
-      rel="preconnect"
-      href="https://fonts.gstatic.com"
-      crossorigin
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <!-- Chart.js via CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Custom styles -->
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body class="bg-slate-950 text-slate-50">
-    <div class="min-h-screen flex flex-col">
-      <!-- Top bar -->
-      <header
-        class="w-full flex items-center justify-between px-4 sm:px-8 py-3 border-b border-slate-800 bg-slate-950/80 backdrop-blur"
-      >
-        <div class="flex items-center gap-3">
-          <div
-            class="h-9 w-9 rounded-md bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center shadow-lg shadow-sky-900/40"
-          >
-            <span class="text-xs font-bold tracking-tight">MDL</span>
+<head>
+  <meta charset="UTF-8" />
+  <title>MDL MIS · SAP Fiori-style Prototype</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- FontAwesome (icons) -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+
+  <!-- Grid.js -->
+  <link
+    href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
+    rel="stylesheet"
+  />
+  <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom light Fiori-style theme -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="h-screen">
+
+  <!-- App shell -->
+  <div class="h-full flex flex-col app-shell">
+
+    <!-- Global App Bar -->
+    <header class="app-bar flex items-center justify-between px-4 py-2 bg-white">
+      <div class="flex items-center gap-3">
+        <button
+          id="sidebarToggle"
+          class="sidebar-toggle-btn px-2 py-1 text-gray-600 hover:bg-gray-100 md:hidden"
+          aria-label="Toggle navigation"
+        >
+          <i class="fas fa-bars"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 flex items-center justify-center border border-gray-300 text-[0.7rem] font-semibold text-blue-700">
+            MDL
           </div>
           <div>
-            <h1
-              class="text-sm sm:text-base font-semibold tracking-tight text-slate-50"
-            >
+            <div class="app-bar-title text-sm md:text-base">
               Mazagon Dock Shipbuilders Limited
-            </h1>
-            <p class="text-xs text-slate-400">
-              Integrated Management Information System Prototype
-            </p>
+            </div>
+            <div class="app-bar-subtitle">
+              Management Information System Prototype
+            </div>
           </div>
         </div>
-        <div class="hidden sm:flex flex-col items-end text-xs text-slate-400">
-          <span class="uppercase tracking-[0.18em] text-[0.6rem]">
-            Navratna PSU · Defence &amp; Marine
-          </span>
-          <span>Strategic · Tactical · Operational Dashboards</span>
+      </div>
+      <div class="flex items-center gap-4 text-gray-600 text-sm">
+        <button class="hover:text-gray-800" title="System settings">
+          <i class="fas fa-cog"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <div class="text-right hidden sm:block">
+            <div class="text-xs font-medium text-gray-800">MDL Executive</div>
+            <div class="text-[0.7rem] text-gray-500">Navratna PSU</div>
+          </div>
+          <div class="avatar-circle">
+            <i class="fas fa-user"></i>
+          </div>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <div class="flex flex-1 overflow-hidden">
-        <!-- Sidebar -->
-        <aside
-          class="w-64 shrink-0 border-r border-slate-800 bg-slate-950/70 backdrop-blur hidden md:flex md:flex-col"
-        >
-          <div class="px-4 py-3 border-b border-slate-800">
-            <p class="text-xs font-semibold text-slate-400 uppercase">
-              Navigation
-            </p>
-          </div>
-          <nav class="flex-1 px-2 py-4 space-y-1" id="sidebar-nav">
-            <button
-              data-view="strategic"
-              class="nav-item active"
-            >
-              <span class="nav-item-label">Strategic View</span>
-              <span class="nav-item-caption">Executive Support System (ESS)</span>
-            </button>
-            <button
-              data-view="tactical"
-              class="nav-item"
-            >
-              <span class="nav-item-label">Tactical View</span>
-              <span class="nav-item-caption">Management Information System (MIS)</span>
-            </button>
-            <button
-              data-view="operational"
-              class="nav-item"
-            >
-              <span class="nav-item-label">Operational View</span>
-              <span class="nav-item-caption"
-                >Transaction Processing System (TPS)</span
-              >
-            </button>
-          </nav>
-          <div class="px-4 py-4 border-t border-slate-800 text-xs text-slate-500">
-            <p class="font-semibold text-slate-400 mb-1">System Notes</p>
-            <p>
-              This is a client-side prototype using
-              <span class="font-medium text-slate-300">localStorage</span> to
-              simulate MDL MIS data. Fully deployable on GitHub Pages.
-            </p>
-          </div>
-        </aside>
+    <!-- Main layout -->
+    <div class="flex flex-1 overflow-hidden">
 
-        <!-- Mobile nav -->
-        <div
-          class="md:hidden border-b border-slate-800 bg-slate-950/80 backdrop-blur"
-        >
-          <div class="flex overflow-x-auto no-scrollbar px-2 py-2 gap-2">
-            <button
-              data-view="strategic"
-              class="mobile-nav-pill active"
-            >
-              Strategic
-            </button>
-            <button
-              data-view="tactical"
-              class="mobile-nav-pill"
-            >
-              Tactical
-            </button>
-            <button
-              data-view="operational"
-              class="mobile-nav-pill"
-            >
-              Operational
-            </button>
+      <!-- Sidebar -->
+      <aside
+        id="sidebar"
+        class="sidebar w-52 flex-shrink-0 flex flex-col transition-transform duration-150 transform translate-x-0 md:translate-x-0"
+      >
+        <div class="px-3 py-3 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Modules
+        </div>
+        <nav class="flex-1 px-2 py-2 space-y-1 text-sm">
+          <div
+            class="sidebar-item active"
+            data-view="strategic"
+          >
+            <i class="fas fa-chart-line w-4 text-xs"></i>
+            <span>Strategic Dashboard</span>
+          </div>
+          <div
+            class="sidebar-item"
+            data-view="tactical"
+          >
+            <i class="fas fa-project-diagram w-4 text-xs"></i>
+            <span>Project Management</span>
+          </div>
+          <div
+            class="sidebar-item"
+            data-view="operational"
+          >
+            <i class="fas fa-list-check w-4 text-xs"></i>
+            <span>Transaction Processing</span>
+          </div>
+        </nav>
+        <div class="border-t border-gray-200 px-3 py-2 text-[0.7rem] text-gray-500">
+          Local prototype · Data stored in browser (<code>localStorage</code>).
+        </div>
+      </aside>
+
+      <!-- Content area -->
+      <main class="flex-1 flex flex-col overflow-hidden bg-gray-100">
+        <!-- Breadcrumbs + context -->
+        <div class="px-4 py-2 border-b border-gray-200 bg-white flex items-center justify-between">
+          <div class="breadcrumb" id="breadcrumb">
+            <span>Home</span>
+            <i class="fas fa-chevron-right"></i>
+            <span>Strategic</span>
+            <i class="fas fa-chevron-right"></i>
+            <span>Executive Dashboard</span>
+          </div>
+          <div class="hidden sm:flex items-center gap-2 text-[0.7rem] text-gray-500">
+            <i class="fas fa-database"></i>
+            <span>Data source: Browser localStorage (mock)</span>
           </div>
         </div>
 
-        <!-- Main content area -->
-        <main
-          class="flex-1 overflow-y-auto bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"
-        >
-          <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-            <!-- Context header -->
-            <section
-              class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-            >
-              <div>
-                <h2
-                  id="view-title"
-                  class="text-lg sm:text-xl font-semibold tracking-tight text-slate-50"
-                >
-                  Strategic View · Executive Support System (ESS)
-                </h2>
-                <p id="view-subtitle" class="text-xs sm:text-sm text-slate-400">
-                  Board-level snapshot of autonomy utilisation, financial KPIs, and
-                  indigenisation.
-                </p>
+        <!-- View containers -->
+        <div class="flex-1 overflow-auto px-4 py-3 space-y-4">
+
+          <!-- Strategic (ESS) -->
+          <section id="view-strategic" class="space-y-4">
+            <!-- KPI tiles -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div class="kpi-tile">
+                <div class="kpi-label">Order Book</div>
+                <div id="kpi-order-book" class="kpi-value">-</div>
               </div>
-              <div
-                class="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[0.7rem] font-medium text-emerald-300"
-              >
-                <span
-                  class="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.35)]"
-                ></span>
-                Client-side prototype · No backend
+              <div class="kpi-tile">
+                <div class="kpi-label">Net Profit Margin</div>
+                <div id="kpi-net-margin" class="kpi-value">-</div>
               </div>
-            </section>
+              <div class="kpi-tile">
+                <div class="kpi-label">Navratna Utilisation</div>
+                <div id="kpi-navratna" class="kpi-value">-</div>
+              </div>
+            </div>
 
-            <!-- Strategic View -->
-            <section id="view-strategic" class="space-y-6">
-              <!-- KPI cards -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <article class="kpi-card">
-                  <div class="kpi-label">Order Book Value</div>
-                  <div class="kpi-value" id="kpi-order-book"></div>
-                  <div class="kpi-footer">
-                    <span class="kpi-badge">Strategic Contracts</span>
-                    <span class="kpi-subtext"
-                      >Approximate consolidated order book position</span
-                    >
+            <!-- Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <!-- Order Book Burn Rate -->
+              <div class="section-card">
+                <div class="section-header">
+                  <div>
+                    <div class="section-header-title">
+                      Order Book Burn Rate (5 Years)
+                    </div>
+                    <div class="section-header-subtitle">
+                      Illustrative recognition of ₹38,000 Cr order book.
+                    </div>
                   </div>
-                </article>
-
-                <article class="kpi-card">
-                  <div class="kpi-label">Net Profit Margin</div>
-                  <div class="kpi-value" id="kpi-net-margin"></div>
-                  <div class="kpi-footer">
-                    <span class="kpi-badge badge-green">Healthy</span>
-                    <span class="kpi-subtext"
-                      >Indicative profitability for recent financial year</span
-                    >
-                  </div>
-                </article>
-
-                <article class="kpi-card lg:col-span-1">
-                  <div class="kpi-label">Navratna Autonomy Utilisation</div>
-                  <div class="kpi-value" id="kpi-autonomy"></div>
-                  <div class="kpi-footer">
-                    <span class="kpi-badge badge-blue">₹1,000 Cr Limit</span>
-                    <span class="kpi-subtext"
-                      >Capital investment autonomy utilisation snapshot</span
-                    >
-                  </div>
-                </article>
+                </div>
+                <div class="section-body">
+                  <canvas id="orderBurnChart" height="160"></canvas>
+                </div>
               </div>
 
-              <!-- Autonomy tracker + Indigenisation index -->
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <article class="panel-card">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Navratna Autonomy Tracker</h3>
-                      <p class="panel-subtitle">
-                        Utilisation of ₹1,000 Cr capital investment autonomy limit
-                      </p>
+              <!-- Indigenisation -->
+              <div class="section-card">
+                <div class="section-header">
+                  <div>
+                    <div class="section-header-title">
+                      Indigenization Index
                     </div>
-                  </header>
-                  <div class="space-y-4">
-                    <div class="flex items-center justify-between text-xs">
-                      <span class="text-slate-400">Utilised Amount</span>
-                      <span
-                        id="autonomy-utilised-label"
-                        class="font-semibold text-slate-100"
-                      ></span>
-                    </div>
-                    <div
-                      class="h-3 w-full rounded-full bg-slate-800 overflow-hidden"
-                    >
-                      <div
-                        id="autonomy-progress-bar"
-                        class="h-full bg-gradient-to-r from-emerald-400 via-sky-400 to-blue-500 transition-all duration-500"
-                        style="width: 0%"
-                      ></div>
-                    </div>
-                    <div class="flex items-center justify-between text-[0.7rem]">
-                      <span class="text-slate-400">0 Cr</span>
-                      <span class="text-slate-400">₹1,000 Cr Limit</span>
-                    </div>
-                    <canvas
-                      id="autonomyGaugeChart"
-                      class="mt-2"
-                      height="140"
-                    ></canvas>
-                  </div>
-                </article>
-
-                <article class="panel-card">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Indigenisation Index</h3>
-                      <p class="panel-subtitle">
-                        Proportion of Make in India vs imported components
-                      </p>
-                    </div>
-                  </header>
-                  <div class="flex flex-col lg:flex-row lg:items-center gap-4">
-                    <div class="flex-1">
-                      <canvas id="indigenisationChart" height="180"></canvas>
-                    </div>
-                    <div class="flex-1 space-y-3 text-xs">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <span
-                            class="inline-block h-2 w-2 rounded-full bg-emerald-400"
-                          ></span>
-                          <span class="text-slate-300 font-medium"
-                            >Make in India</span
-                          >
-                        </div>
-                        <span
-                          id="indi-domestic-label"
-                          class="font-semibold text-emerald-300"
-                        ></span>
-                      </div>
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <span
-                            class="inline-block h-2 w-2 rounded-full bg-sky-400"
-                          ></span>
-                          <span class="text-slate-300 font-medium"
-                            >Imported</span
-                          >
-                        </div>
-                        <span
-                          id="indi-imported-label"
-                          class="font-semibold text-sky-300"
-                        ></span>
-                      </div>
-                      <p class="text-slate-400 leading-relaxed">
-                        The index is illustrative and can be adapted to track
-                        platform-wise indigenisation targets, strategic
-                        partnerships, and localisation milestones.
-                      </p>
+                    <div class="section-header-subtitle">
+                      Share of Make in India vs Imports.
                     </div>
                   </div>
-                </article>
+                </div>
+                <div class="section-body">
+                  <canvas id="indigenizationChart" height="160"></canvas>
+                </div>
               </div>
-            </section>
+            </div>
+          </section>
 
-            <!-- Tactical View -->
-            <section id="view-tactical" class="space-y-6 hidden">
-              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <article class="panel-card lg:col-span-2">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Budget vs Actual · Key Projects</h3>
-                      <p class="panel-subtitle">
-                        Cost variance monitoring for strategic programmes
-                      </p>
-                    </div>
-                  </header>
-                  <div class="overflow-x-auto">
-                    <table
-                      class="min-w-full text-xs border-separate border-spacing-y-1"
-                    >
-                      <thead>
-                        <tr class="text-[0.65rem] uppercase text-slate-400">
-                          <th class="table-head-cell text-left">Project</th>
-                          <th class="table-head-cell text-right">
-                            Budgeted Cost (₹ Cr)
-                          </th>
-                          <th class="table-head-cell text-right">
-                            Actual Cost (₹ Cr)
-                          </th>
-                          <th class="table-head-cell text-right">
-                            Cost Variance (₹ Cr)
-                          </th>
-                          <th class="table-head-cell text-right">Variance %</th>
-                          <th class="table-head-cell text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody id="projects-table-body"></tbody>
-                    </table>
+          <!-- Tactical (MIS) -->
+          <section id="view-tactical" class="space-y-4 hidden">
+            <div class="section-card">
+              <div class="section-header">
+                <div>
+                  <div class="section-header-title">
+                    Budget vs Actual · Key Projects
                   </div>
-                </article>
+                  <div class="section-header-subtitle">
+                    Sorted, filterable project portfolio view.
+                  </div>
+                </div>
+                <button id="openProjectModal" class="primary-button">
+                  <i class="fas fa-plus mr-1"></i> Add New Project
+                </button>
+              </div>
+              <div class="section-body">
+                <div id="projectsGrid" class="grid-container"></div>
+              </div>
+            </div>
+          </section>
 
-                <article class="panel-card">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Critical Resource Allocation</h3>
-                      <p class="panel-subtitle">
-                        High-value yard infrastructure utilisation snapshot
-                      </p>
-                    </div>
-                  </header>
-                  <div class="space-y-4 text-xs">
-                    <div class="resource-card">
+          <!-- Operational (TPS) -->
+          <section id="view-operational" class="space-y-4 hidden">
+            <div class="section-card">
+              <div class="section-header">
+                <div>
+                  <div class="section-header-title">
+                    Material Issue Logger
+                  </div>
+                  <div class="section-header-subtitle">
+                    Left: entry form · Right: live issue log grid.
+                  </div>
+                </div>
+              </div>
+              <div class="section-body">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <!-- Left: form -->
+                  <div class="space-y-3">
+                    <div class="grid grid-cols-1 gap-2">
                       <div>
-                        <p class="resource-label">Heavy-Lift Crane</p>
-                        <p
-                          id="resource-crane-project"
-                          class="resource-value"
-                        ></p>
+                        <label class="form-label">Material</label>
+                        <select id="materialType" class="form-select">
+                          <option value="Steel Plate">Steel Plate</option>
+                          <option value="Pipes">Pipes</option>
+                          <option value="Bulb Bar">Bulb Bar</option>
+                        </select>
                       </div>
-                      <div class="resource-meta">
-                        <span
-                          class="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.65rem] font-medium text-amber-300 ring-1 ring-amber-500/30"
-                          id="resource-crane-status"
-                        ></span>
-                      </div>
-                    </div>
-
-                    <div class="resource-card">
                       <div>
-                        <p class="resource-label">Dry Dock 1</p>
-                        <p
-                          id="resource-drydock-project"
-                          class="resource-value"
-                        ></p>
-                      </div>
-                      <div class="resource-meta">
-                        <span
-                          class="inline-flex items-center rounded-full bg-sky-500/10 px-2 py-0.5 text-[0.65rem] font-medium text-sky-300 ring-1 ring-sky-500/40"
-                          id="resource-drydock-status"
-                        ></span>
-                      </div>
-                    </div>
-
-                    <p class="text-slate-400 leading-relaxed">
-                      This view can be extended for real-time yard planning,
-                      clash detection, and what-if simulations using the same
-                      client-side architecture.
-                    </p>
-                  </div>
-                </article>
-              </div>
-            </section>
-
-            <!-- Operational View -->
-            <section id="view-operational" class="space-y-6 hidden">
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Material Issue Logger -->
-                <article class="panel-card">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Material Issue Logger</h3>
-                      <p class="panel-subtitle">
-                        Shop-floor record of issued plates, sections, and
-                        consumables
-                      </p>
-                    </div>
-                  </header>
-                  <form
-                    id="material-form"
-                    class="space-y-3 text-xs"
-                    autocomplete="off"
-                  >
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label class="form-label">Material Type</label>
+                        <label class="form-label">Heat Number</label>
                         <input
+                          id="heatNumber"
                           type="text"
-                          name="materialType"
-                          required
-                          placeholder="e.g. Steel Plate, Bulb Bar"
                           class="form-input"
-                        />
-                      </div>
-                      <div>
-                        <label class="form-label">Heat / Batch Number</label>
-                        <input
-                          type="text"
-                          name="heatNumber"
-                          required
                           placeholder="e.g. HT-24-019"
-                          class="form-input"
                         />
                       </div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                    <div class="grid grid-cols-2 gap-2">
                       <div>
                         <label class="form-label">Quantity</label>
                         <input
+                          id="quantity"
                           type="number"
-                          name="quantity"
-                          required
                           min="1"
-                          placeholder="e.g. 12"
                           class="form-input"
+                          placeholder="e.g. 20"
                         />
                       </div>
                       <div>
-                        <label class="form-label">Unit</label>
-                        <select name="unit" class="form-input">
-                          <option value="MT">Metric Tonnes (MT)</option>
-                          <option value="Nos">Nos</option>
-                          <option value="M">Metres (M)</option>
+                        <label class="form-label">Project ID</label>
+                        <select id="projectId" class="form-select">
+                          <option value="P15B">P15B</option>
+                          <option value="P17A">P17A</option>
+                          <option value="P75">P75</option>
                         </select>
                       </div>
                     </div>
-                    <div>
-                      <label class="form-label">Project / Hull Reference</label>
-                      <input
-                        type="text"
-                        name="projectRef"
-                        placeholder="e.g. P17A – Hull 801"
-                        class="form-input"
-                      />
-                    </div>
-                    <button type="submit" class="primary-button w-full">
-                      Log Material Issue
-                    </button>
-                    <p
-                      id="material-form-message"
-                      class="text-[0.7rem] text-emerald-300 hidden"
-                    >
-                      Entry saved to local browser storage.
-                    </p>
-                  </form>
-                  <div class="mt-5">
-                    <h4 class="text-xs font-semibold text-slate-300 mb-2">
-                      Recent Materials Issued
-                    </h4>
-                    <div class="overflow-x-auto">
-                      <table
-                        class="min-w-full text-[0.7rem] border-separate border-spacing-y-1"
-                      >
-                        <thead>
-                          <tr class="text-slate-400">
-                            <th class="table-head-cell text-left">Material</th>
-                            <th class="table-head-cell text-left">Heat No.</th>
-                            <th class="table-head-cell text-right">Qty</th>
-                            <th class="table-head-cell text-left">Project</th>
-                            <th class="table-head-cell text-right">Time</th>
-                          </tr>
-                        </thead>
-                        <tbody id="materials-table-body"></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </article>
 
-                <!-- Task / e-Measurement Logger -->
-                <article class="panel-card">
-                  <header class="panel-header">
-                    <div>
-                      <h3 class="panel-title">Task / e-Measurement Logger</h3>
-                      <p class="panel-subtitle">
-                        Subcontractor progress, milestones, and e-measurement
-                        remarks
-                      </p>
-                    </div>
-                  </header>
-                  <form
-                    id="task-form"
-                    class="space-y-3 text-xs"
-                    autocomplete="off"
-                  >
-                    <div>
-                      <label class="form-label">Activity Description</label>
-                      <input
-                        type="text"
-                        name="description"
-                        required
-                        placeholder="e.g. Keel laying completed for P17A – Hull 801"
-                        class="form-input"
-                      />
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label class="form-label">Project / Hull</label>
-                        <input
-                          type="text"
-                          name="project"
-                          required
-                          placeholder="e.g. P17A – 801"
-                          class="form-input"
-                        />
-                      </div>
-                      <div>
-                        <label class="form-label">Subcontractor</label>
-                        <input
-                          type="text"
-                          name="subcontractor"
-                          placeholder="e.g. ABC Shipbuilding Services"
-                          class="form-input"
-                        />
-                      </div>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label class="form-label">Stage</label>
-                        <select name="stage" class="form-input">
-                          <option value="Initiated">Initiated</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Inspection Call Raised">
-                            Inspection Call Raised
-                          </option>
-                          <option value="Completed">Completed</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="form-label">Measurement (Optional)</label>
-                        <input
-                          type="text"
-                          name="measurement"
-                          placeholder="e.g. 120 m of seam welded"
-                          class="form-input"
-                        />
-                      </div>
-                    </div>
-                    <button type="submit" class="primary-button w-full">
-                      Log Activity
-                    </button>
-                    <p
-                      id="task-form-message"
-                      class="text-[0.7rem] text-emerald-300 hidden"
-                    >
-                      Activity added to local activity feed.
-                    </p>
-                  </form>
-
-                  <div class="mt-5 space-y-2">
-                    <div class="flex items-center justify-between text-xs">
-                      <h4 class="font-semibold text-slate-300">
-                        Recent Activities
-                      </h4>
-                      <button
-                        id="clear-activity-feed"
-                        class="text-[0.7rem] text-slate-400 hover:text-rose-300 underline-offset-2 hover:underline"
-                      >
-                        Clear feed (local only)
+                    <div class="flex justify-end">
+                      <button id="logMaterialBtn" class="primary-button">
+                        <i class="fas fa-save mr-1"></i> Log Issue
                       </button>
                     </div>
                     <div
-                      id="activity-feed"
-                      class="space-y-2 max-h-72 overflow-y-auto pr-1"
-                    ></div>
+                      id="materialFormMessage"
+                      class="text-xs text-green-700 mt-1 hidden"
+                    >
+                      Material issue logged in local storage.
+                    </div>
                   </div>
-                </article>
+
+                  <!-- Right: grid -->
+                  <div>
+                    <div id="materialsGrid" class="grid-container"></div>
+                  </div>
+                </div>
               </div>
-            </section>
-
-            <!-- Footer -->
-            <footer class="pt-4 border-t border-slate-800 mt-4">
-              <p class="text-[0.65rem] text-slate-500">
-                This MIS is a
-                <span class="font-semibold text-slate-300">front-end only</span>
-                prototype for demonstration purposes. All data resides in the
-                browser&apos;s
-                <span class="font-semibold text-slate-300">localStorage</span>
-                and resets per browser/device.
-              </p>
-            </footer>
-          </div>
-        </main>
-      </div>
+            </div>
+          </section>
+        </div>
+      </main>
     </div>
+  </div>
 
-    <!-- Application logic -->
-    <script src="app.js"></script>
-  </body>
+  <!-- Add Project Modal -->
+  <div
+    id="projectModal"
+    class="fixed inset-0 flex items-center justify-center z-40 hidden"
+    aria-hidden="true"
+  >
+    <div class="modal-backdrop absolute inset-0"></div>
+    <div class="modal-panel relative mx-4 p-4 sm:p-5 z-10">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-gray-900">
+            Add New Project
+          </div>
+          <div class="text-xs text-gray-500">
+            Capture a new project for the tactical budget vs actual grid.
+          </div>
+        </div>
+        <button id="closeProjectModal" class="secondary-button px-2 py-1">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+
+      <form id="projectForm" class="space-y-2 text-sm">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="form-label">Project ID</label>
+            <input
+              id="projId"
+              type="text"
+              class="form-input"
+              placeholder="e.g. P19A"
+              required
+            />
+          </div>
+          <div>
+            <label class="form-label">Status</label>
+            <select id="projStatus" class="form-select">
+              <option value="On Track">On Track</option>
+              <option value="Slight Overrun">Slight Overrun</option>
+              <option value="Managed Overrun">Managed Overrun</option>
+              <option value="Underrun">Underrun</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="form-label">Description</label>
+          <input
+            id="projDescription"
+            type="text"
+            class="form-input"
+            placeholder="e.g. Next-gen Corvette Programme"
+            required
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="form-label">Budgeted Cost (₹ Cr)</label>
+            <input
+              id="projBudget"
+              type="number"
+              min="0"
+              step="0.1"
+              class="form-input"
+              required
+            />
+          </div>
+          <div>
+            <label class="form-label">Actual Cost (₹ Cr)</label>
+            <input
+              id="projActual"
+              type="number"
+              min="0"
+              step="0.1"
+              class="form-input"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="cancelProjectBtn" class="secondary-button">
+            Cancel
+          </button>
+          <button type="submit" class="primary-button">
+            <i class="fas fa-check mr-1"></i> Save Project
+          </button>
+        </div>
+
+        <div
+          id="projectFormMessage"
+          class="text-xs text-green-700 mt-1 hidden"
+        >
+          Project added to local storage and grid.
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
 </html>
 
