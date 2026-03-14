@@ -1,0 +1,193 @@
+/* Global typography / base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+/* Hide scrollbars in specific containers when needed */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Sidebar nav items */
+.nav-item {
+  @apply w-full flex flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition border border-transparent bg-slate-900/40 text-slate-300 hover:bg-slate-900 hover:border-sky-500/40 hover:text-slate-50;
+}
+
+.nav-item .nav-item-label {
+  @apply font-semibold tracking-tight;
+}
+
+.nav-item .nav-item-caption {
+  @apply text-[0.7rem] text-slate-400;
+}
+
+.nav-item.active {
+  @apply border-sky-500/70 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 text-slate-50 shadow-[0_0_0_1px_rgba(56,189,248,0.2)];
+}
+
+/* Mobile nav pills */
+.mobile-nav-pill {
+  @apply whitespace-nowrap rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-300 transition hover:border-sky-500/60 hover:text-slate-50;
+}
+
+.mobile-nav-pill.active {
+  @apply border-sky-500 bg-sky-600/20 text-sky-100 shadow-[0_0_0_1px_rgba(56,189,248,0.6)];
+}
+
+/* KPI cards */
+.kpi-card {
+  @apply relative overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-br from-slate-950/90 via-slate-900/90 to-slate-950/90 px-4 py-4 shadow-[0_18px_45px_rgba(15,23,42,0.8)];
+}
+
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  opacity: 0.35;
+  background: radial-gradient(
+      circle at 0% 0%,
+      rgba(59, 130, 246, 0.35),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 100% 100%,
+      rgba(45, 212, 191, 0.3),
+      transparent 45%
+    );
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.kpi-label {
+  @apply text-xs font-semibold tracking-wide text-slate-400 uppercase;
+}
+
+.kpi-value {
+  @apply mt-2 text-2xl font-semibold tracking-tight text-slate-50;
+}
+
+.kpi-footer {
+  @apply mt-3 flex items-center justify-between gap-2;
+}
+
+.kpi-badge {
+  @apply inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[0.65rem] font-medium text-sky-200;
+}
+
+.badge-green {
+  @apply border-emerald-500/40 bg-emerald-500/10 text-emerald-200;
+}
+
+.badge-blue {
+  @apply border-sky-500/40 bg-sky-500/10 text-sky-200;
+}
+
+.kpi-subtext {
+  @apply text-[0.65rem] text-slate-400;
+}
+
+/* Panel cards */
+.panel-card {
+  @apply rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-4 shadow-[0_18px_45px_rgba(15,23,42,0.8)];
+}
+
+.panel-header {
+  @apply mb-4 flex items-center justify-between gap-2;
+}
+
+.panel-title {
+  @apply text-sm font-semibold tracking-tight text-slate-50;
+}
+
+.panel-subtitle {
+  @apply text-[0.7rem] text-slate-400;
+}
+
+/* Tables */
+.table-head-cell {
+  @apply px-3 py-2;
+}
+
+.table-row {
+  @apply rounded-lg bg-slate-900/70 hover:bg-slate-900 border border-slate-800/80 transition;
+}
+
+.table-cell {
+  @apply px-3 py-2 align-middle text-[0.7rem] text-slate-100;
+}
+
+/* Resource cards */
+.resource-card {
+  @apply flex items-start justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3;
+}
+
+.resource-label {
+  @apply text-[0.7rem] font-semibold text-slate-300 uppercase tracking-wide;
+}
+
+.resource-value {
+  @apply text-xs font-semibold text-slate-50;
+}
+
+.resource-meta {
+  @apply flex flex-col items-end gap-1 text-[0.65rem] text-slate-400;
+}
+
+/* Forms */
+.form-label {
+  @apply mb-1 block text-[0.7rem] font-medium text-slate-300;
+}
+
+.form-input {
+  @apply w-full rounded-md border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500;
+}
+
+.primary-button {
+  @apply inline-flex items-center justify-center rounded-md border border-sky-500/70 bg-gradient-to-r from-sky-600 to-blue-700 px-3 py-2 text-xs font-semibold text-slate-50 shadow-[0_10px_30px_rgba(37,99,235,0.6)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 focus:ring-offset-slate-950;
+}
+
+/* Activity feed */
+.activity-item {
+  @apply relative overflow-hidden rounded-lg border border-slate-800 bg-slate-900/90 px-3 py-2.5;
+}
+
+.activity-pill {
+  @apply inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[0.6rem] font-medium text-slate-300;
+}
+
+.activity-meta {
+  @apply mt-1 flex flex-wrap items-center gap-2 text-[0.65rem] text-slate-400;
+}
+
+.activity-time {
+  @apply text-[0.65rem] text-slate-500;
+}
+
+.activity-description {
+  @apply text-xs text-slate-50;
+}
+
+/* Utility: subtle fade for overflowing feed */
+#activity-feed::after {
+  content: "";
+  position: sticky;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(15, 23, 42, 0.95));
+}
+
