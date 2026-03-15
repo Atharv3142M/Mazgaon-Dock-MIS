@@ -2,400 +2,540 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MDL MIS · SAP Fiori-style Prototype</title>
+  <title>MDL COMMAND · MIS Enterprise Platform</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind CSS (CDN) -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- FontAwesome (icons) -->
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-    crossorigin="anonymous"
-    referrerpolicy="no-referrer"
-  />
+  <!-- Google Fonts: IBM Plex Mono + IBM Plex Sans (Industrial/Technical) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
 
   <!-- Grid.js -->
-  <link
-    href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
-    rel="stylesheet"
-  />
+  <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Custom light Fiori-style theme -->
+  <!-- Custom styles -->
   <link rel="stylesheet" href="style.css" />
 </head>
-<body class="h-screen">
+<body>
 
-  <!-- App shell -->
-  <div class="h-full flex flex-col app-shell">
+<!-- ═══════════════════════════════════════════════════════════
+     APP SHELL — Three-zone layout: Header / Sidebar / Content
+     ═══════════════════════════════════════════════════════════ -->
+<div class="app-shell" id="appShell">
 
-    <!-- Global App Bar -->
-    <header class="app-bar flex items-center justify-between px-4 py-2 bg-white">
-      <div class="flex items-center gap-3">
-        <button
-          id="sidebarToggle"
-          class="sidebar-toggle-btn px-2 py-1 text-gray-600 hover:bg-gray-100 md:hidden"
-          aria-label="Toggle navigation"
-        >
-          <i class="fas fa-bars"></i>
-        </button>
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 flex items-center justify-center border border-gray-300 text-[0.7rem] font-semibold text-blue-700">
-            MDL
-          </div>
-          <div>
-            <div class="app-bar-title text-sm md:text-base">
-              Mazagon Dock Shipbuilders Limited
-            </div>
-            <div class="app-bar-subtitle">
-              Management Information System Prototype
-            </div>
-          </div>
+  <!-- ── TOP APPLICATION BAR ── -->
+  <header class="app-bar" id="appBar">
+    <div class="app-bar-left">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="brand-block">
+        <div class="brand-logo">
+          <span>MDL</span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">MAZAGON DOCK SHIPBUILDERS LIMITED</div>
+          <div class="brand-sub">COMMAND &amp; MANAGEMENT INFORMATION SYSTEM · NAVRATNA PSU</div>
         </div>
       </div>
-      <div class="flex items-center gap-4 text-gray-600 text-sm">
-        <button class="hover:text-gray-800" title="System settings">
-          <i class="fas fa-cog"></i>
-        </button>
-        <div class="flex items-center gap-2">
-          <div class="text-right hidden sm:block">
-            <div class="text-xs font-medium text-gray-800">MDL Executive</div>
-            <div class="text-[0.7rem] text-gray-500">Navratna PSU</div>
-          </div>
-          <div class="avatar-circle">
-            <i class="fas fa-user"></i>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Main layout -->
-    <div class="flex flex-1 overflow-hidden">
-
-      <!-- Sidebar -->
-      <aside
-        id="sidebar"
-        class="sidebar w-52 flex-shrink-0 flex flex-col transition-transform duration-150 transform translate-x-0 md:translate-x-0"
-      >
-        <div class="px-3 py-3 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          Modules
-        </div>
-        <nav class="flex-1 px-2 py-2 space-y-1 text-sm">
-          <div
-            class="sidebar-item active"
-            data-view="strategic"
-          >
-            <i class="fas fa-chart-line w-4 text-xs"></i>
-            <span>Strategic Dashboard</span>
-          </div>
-          <div
-            class="sidebar-item"
-            data-view="tactical"
-          >
-            <i class="fas fa-project-diagram w-4 text-xs"></i>
-            <span>Project Management</span>
-          </div>
-          <div
-            class="sidebar-item"
-            data-view="operational"
-          >
-            <i class="fas fa-list-check w-4 text-xs"></i>
-            <span>Transaction Processing</span>
-          </div>
-        </nav>
-        <div class="border-t border-gray-200 px-3 py-2 text-[0.7rem] text-gray-500">
-          Local prototype · Data stored in browser (<code>localStorage</code>).
-        </div>
-      </aside>
-
-      <!-- Content area -->
-      <main class="flex-1 flex flex-col overflow-hidden bg-gray-100">
-        <!-- Breadcrumbs + context -->
-        <div class="px-4 py-2 border-b border-gray-200 bg-white flex items-center justify-between">
-          <div class="breadcrumb" id="breadcrumb">
-            <span>Home</span>
-            <i class="fas fa-chevron-right"></i>
-            <span>Strategic</span>
-            <i class="fas fa-chevron-right"></i>
-            <span>Executive Dashboard</span>
-          </div>
-          <div class="hidden sm:flex items-center gap-2 text-[0.7rem] text-gray-500">
-            <i class="fas fa-database"></i>
-            <span>Data source: Browser localStorage (mock)</span>
-          </div>
-        </div>
-
-        <!-- View containers -->
-        <div class="flex-1 overflow-auto px-4 py-3 space-y-4">
-
-          <!-- Strategic (ESS) -->
-          <section id="view-strategic" class="space-y-4">
-            <!-- KPI tiles -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div class="kpi-tile">
-                <div class="kpi-label">Order Book</div>
-                <div id="kpi-order-book" class="kpi-value">-</div>
-              </div>
-              <div class="kpi-tile">
-                <div class="kpi-label">Net Profit Margin</div>
-                <div id="kpi-net-margin" class="kpi-value">-</div>
-              </div>
-              <div class="kpi-tile">
-                <div class="kpi-label">Navratna Utilisation</div>
-                <div id="kpi-navratna" class="kpi-value">-</div>
-              </div>
-            </div>
-
-            <!-- Charts -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <!-- Order Book Burn Rate -->
-              <div class="section-card">
-                <div class="section-header">
-                  <div>
-                    <div class="section-header-title">
-                      Order Book Burn Rate (5 Years)
-                    </div>
-                    <div class="section-header-subtitle">
-                      Illustrative recognition of ₹38,000 Cr order book.
-                    </div>
-                  </div>
-                </div>
-                <div class="section-body">
-                  <canvas id="orderBurnChart" height="160"></canvas>
-                </div>
-              </div>
-
-              <!-- Indigenisation -->
-              <div class="section-card">
-                <div class="section-header">
-                  <div>
-                    <div class="section-header-title">
-                      Indigenization Index
-                    </div>
-                    <div class="section-header-subtitle">
-                      Share of Make in India vs Imports.
-                    </div>
-                  </div>
-                </div>
-                <div class="section-body">
-                  <canvas id="indigenizationChart" height="160"></canvas>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Tactical (MIS) -->
-          <section id="view-tactical" class="space-y-4 hidden">
-            <div class="section-card">
-              <div class="section-header">
-                <div>
-                  <div class="section-header-title">
-                    Budget vs Actual · Key Projects
-                  </div>
-                  <div class="section-header-subtitle">
-                    Sorted, filterable project portfolio view.
-                  </div>
-                </div>
-                <button id="openProjectModal" class="primary-button">
-                  <i class="fas fa-plus mr-1"></i> Add New Project
-                </button>
-              </div>
-              <div class="section-body">
-                <div id="projectsGrid" class="grid-container"></div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Operational (TPS) -->
-          <section id="view-operational" class="space-y-4 hidden">
-            <div class="section-card">
-              <div class="section-header">
-                <div>
-                  <div class="section-header-title">
-                    Material Issue Logger
-                  </div>
-                  <div class="section-header-subtitle">
-                    Left: entry form · Right: live issue log grid.
-                  </div>
-                </div>
-              </div>
-              <div class="section-body">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <!-- Left: form -->
-                  <div class="space-y-3">
-                    <div class="grid grid-cols-1 gap-2">
-                      <div>
-                        <label class="form-label">Material</label>
-                        <select id="materialType" class="form-select">
-                          <option value="Steel Plate">Steel Plate</option>
-                          <option value="Pipes">Pipes</option>
-                          <option value="Bulb Bar">Bulb Bar</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="form-label">Heat Number</label>
-                        <input
-                          id="heatNumber"
-                          type="text"
-                          class="form-input"
-                          placeholder="e.g. HT-24-019"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2">
-                      <div>
-                        <label class="form-label">Quantity</label>
-                        <input
-                          id="quantity"
-                          type="number"
-                          min="1"
-                          class="form-input"
-                          placeholder="e.g. 20"
-                        />
-                      </div>
-                      <div>
-                        <label class="form-label">Project ID</label>
-                        <select id="projectId" class="form-select">
-                          <option value="P15B">P15B</option>
-                          <option value="P17A">P17A</option>
-                          <option value="P75">P75</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div class="flex justify-end">
-                      <button id="logMaterialBtn" class="primary-button">
-                        <i class="fas fa-save mr-1"></i> Log Issue
-                      </button>
-                    </div>
-                    <div
-                      id="materialFormMessage"
-                      class="text-xs text-green-700 mt-1 hidden"
-                    >
-                      Material issue logged in local storage.
-                    </div>
-                  </div>
-
-                  <!-- Right: grid -->
-                  <div>
-                    <div id="materialsGrid" class="grid-container"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </main>
     </div>
-  </div>
-
-  <!-- Add Project Modal -->
-  <div
-    id="projectModal"
-    class="fixed inset-0 flex items-center justify-center z-40 hidden"
-    aria-hidden="true"
-  >
-    <div class="modal-backdrop absolute inset-0"></div>
-    <div class="modal-panel relative mx-4 p-4 sm:p-5 z-10">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <div class="text-sm font-semibold text-gray-900">
-            Add New Project
-          </div>
-          <div class="text-xs text-gray-500">
-            Capture a new project for the tactical budget vs actual grid.
-          </div>
+    <div class="app-bar-center" id="systemClock">
+      <span class="clock-date" id="clockDate">--</span>
+      <span class="clock-sep">|</span>
+      <span class="clock-time" id="clockTime">--:--:--</span>
+      <span class="clock-sep">|</span>
+      <span class="clock-ist">IST</span>
+    </div>
+    <div class="app-bar-right">
+      <div class="status-badge online"><i class="fas fa-circle"></i> SYSTEM NOMINAL</div>
+      <div class="header-divider"></div>
+      <button class="icon-btn" title="Alerts"><i class="fas fa-bell"></i><span class="badge-dot"></span></button>
+      <button class="icon-btn" title="Settings"><i class="fas fa-cog"></i></button>
+      <div class="user-chip">
+        <div class="user-avatar"><i class="fas fa-user-shield"></i></div>
+        <div class="user-info">
+          <div class="user-name">CMD EXECUTIVE</div>
+          <div class="user-role">L1 CLEARANCE · MDL HQ</div>
         </div>
-        <button id="closeProjectModal" class="secondary-button px-2 py-1">
-          <i class="fas fa-times text-xs"></i>
-        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT (sidebar + content) ── -->
+  <div class="layout-body">
+
+    <!-- ── LEFT SIDEBAR ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section-label">COMMAND MODULES</div>
+      <nav class="sidebar-nav">
+        <div class="sidebar-item active" data-view="ess">
+          <i class="fas fa-satellite-dish"></i>
+          <div class="sidebar-item-text">
+            <span class="sidebar-item-title">Financial Command</span>
+            <span class="sidebar-item-sub">ESS · Executive Summary</span>
+          </div>
+          <div class="sidebar-indicator"></div>
+        </div>
+        <div class="sidebar-item" data-view="tactical">
+          <i class="fas fa-anchor"></i>
+          <div class="sidebar-item-text">
+            <span class="sidebar-item-title">Project &amp; Spatial MIS</span>
+            <span class="sidebar-item-sub">Tactical · Portfolio View</span>
+          </div>
+          <div class="sidebar-indicator"></div>
+        </div>
+        <div class="sidebar-item" data-view="hcm">
+          <i class="fas fa-hard-hat"></i>
+          <div class="sidebar-item-text">
+            <span class="sidebar-item-title">Human Capital &amp; HSE</span>
+            <span class="sidebar-item-sub">Operational · TPS Layer</span>
+          </div>
+          <div class="sidebar-indicator"></div>
+        </div>
+      </nav>
+      <div class="sidebar-section-label mt-4">DATA LAYER</div>
+      <div class="sidebar-meta-item"><i class="fas fa-database"></i><span>localStorage · SAP-FI/CO Mock</span></div>
+      <div class="sidebar-meta-item"><i class="fas fa-shield-halved"></i><span>Offline · Air-gapped Mode</span></div>
+      <div class="sidebar-meta-item"><i class="fas fa-code-branch"></i><span>v3.0.0 · MDL-MIS-PROTO</span></div>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-text">MINIRATNA → NAVRATNA · GOI ENTERPRISE</div>
+      </div>
+    </aside>
+
+    <!-- ── CONTENT AREA ── -->
+    <main class="content-area" id="contentArea">
+
+      <!-- BREADCRUMB BAR -->
+      <div class="breadcrumb-bar">
+        <div class="breadcrumb" id="breadcrumb">
+          <span>MDL HQ</span>
+          <i class="fas fa-angle-right"></i>
+          <span>Financial Command</span>
+          <i class="fas fa-angle-right"></i>
+          <span>Executive Overview</span>
+        </div>
+        <div class="breadcrumb-meta">
+          <i class="fas fa-clock"></i>
+          <span id="lastRefresh">Last refreshed: --</span>
+          <button class="refresh-btn" id="refreshBtn" title="Refresh data"><i class="fas fa-rotate-right"></i></button>
+        </div>
       </div>
 
-      <form id="projectForm" class="space-y-2 text-sm">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="form-label">Project ID</label>
-            <input
-              id="projId"
-              type="text"
-              class="form-input"
-              placeholder="e.g. P19A"
-              required
-            />
+      <!-- ══════════════════════════════════════════════════
+           VIEW 1: FINANCIAL & ECONOMIC COMMAND CENTER (ESS)
+           Simulates SAP-FI/CO + SAP-BW Executive Summary
+           ══════════════════════════════════════════════════ -->
+      <section id="view-ess" class="view active-view">
+
+        <div class="view-header">
+          <div class="view-title-block">
+            <div class="view-label">ESS MODULE · SAP-FI/CO INTEGRATION LAYER</div>
+            <h1 class="view-title">Financial &amp; Economic Command Center</h1>
+            <p class="view-subtitle">FY 2024-25 Audited Financials · Mazagon Dock Shipbuilders Limited · BSE: 543237</p>
           </div>
-          <div>
-            <label class="form-label">Status</label>
-            <select id="projStatus" class="form-select">
-              <option value="On Track">On Track</option>
-              <option value="Slight Overrun">Slight Overrun</option>
-              <option value="Managed Overrun">Managed Overrun</option>
-              <option value="Underrun">Underrun</option>
-            </select>
-          </div>
+          <div class="view-fy-badge">FY25 FINAL</div>
         </div>
-        <div>
-          <label class="form-label">Description</label>
-          <input
-            id="projDescription"
-            type="text"
-            class="form-input"
-            placeholder="e.g. Next-gen Corvette Programme"
-            required
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="form-label">Budgeted Cost (₹ Cr)</label>
-            <input
-              id="projBudget"
-              type="number"
-              min="0"
-              step="0.1"
-              class="form-input"
-              required
-            />
+
+        <!-- KPI TILES ROW -->
+        <div class="kpi-grid" id="kpiGrid">
+          <div class="kpi-card kpi-primary">
+            <div class="kpi-top">
+              <div class="kpi-icon"><i class="fas fa-chart-line"></i></div>
+              <div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +20.8% YoY</div>
+            </div>
+            <div class="kpi-value" id="kpi-revenue">₹11,431.88 Cr</div>
+            <div class="kpi-label">Total Revenue (FY25)</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:85%"></div></div>
+            <div class="kpi-footnote">vs ₹9,462.49 Cr in FY24</div>
           </div>
-          <div>
-            <label class="form-label">Actual Cost (₹ Cr)</label>
-            <input
-              id="projActual"
-              type="number"
-              min="0"
-              step="0.1"
-              class="form-input"
-              required
-            />
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+              <div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +22.4%</div>
+            </div>
+            <div class="kpi-value" id="kpi-pat">₹2,324.88 Cr</div>
+            <div class="kpi-label">Profit After Tax (PAT)</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:78%"></div></div>
+            <div class="kpi-footnote">Net Margin: 20.3%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <div class="kpi-icon"><i class="fas fa-water"></i></div>
+              <div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> Robust</div>
+            </div>
+            <div class="kpi-value" id="kpi-cashflow">₹21.00 Bn</div>
+            <div class="kpi-label">Operating Cash Flow</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:72%"></div></div>
+            <div class="kpi-footnote">Zero long-term debt</div>
+          </div>
+          <div class="kpi-card kpi-accent">
+            <div class="kpi-top">
+              <div class="kpi-icon"><i class="fas fa-ship"></i></div>
+              <div class="kpi-delta neutral"><i class="fas fa-bookmark"></i> Active</div>
+            </div>
+            <div class="kpi-value" id="kpi-orderbook">₹32,260 Cr</div>
+            <div class="kpi-label">Order Book Value</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:95%"></div></div>
+            <div class="kpi-footnote">3+ years revenue visibility</div>
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" id="cancelProjectBtn" class="secondary-button">
-            Cancel
-          </button>
-          <button type="submit" class="primary-button">
-            <i class="fas fa-check mr-1"></i> Save Project
+        <!-- CHARTS ROW -->
+        <div class="charts-grid">
+          <!-- Revenue time-series -->
+          <div class="chart-card chart-large">
+            <div class="chart-header">
+              <div>
+                <div class="chart-title">5-Year Revenue &amp; PAT Trajectory</div>
+                <div class="chart-subtitle">SAP-FI/CO · P&amp;L Module · Consolidated Figures (₹ Crore)</div>
+              </div>
+              <div class="chart-badge">TIME SERIES</div>
+            </div>
+            <div class="chart-body">
+              <canvas id="revenueChart"></canvas>
+            </div>
+          </div>
+          <!-- Indigenization doughnut -->
+          <div class="chart-card chart-small">
+            <div class="chart-header">
+              <div>
+                <div class="chart-title">Indigenization KPI</div>
+                <div class="chart-subtitle">Make in India vs Import Procurement</div>
+              </div>
+              <div class="chart-badge">AOP</div>
+            </div>
+            <div class="chart-body chart-body-donut">
+              <canvas id="indiChart"></canvas>
+              <div class="donut-center-label">
+                <div class="donut-pct" id="donutPct">76%</div>
+                <div class="donut-sub">Domestic</div>
+              </div>
+            </div>
+            <div class="indi-legend">
+              <div class="indi-leg-item"><span class="leg-dot leg-blue"></span>Make in India: 76%</div>
+              <div class="indi-leg-item"><span class="leg-dot leg-gray"></span>Imports: 24%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECONDARY METRICS -->
+        <div class="metrics-strip">
+          <div class="metric-item">
+            <div class="metric-label">EBITDA Margin</div>
+            <div class="metric-value accent">27.4%</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">EPS (Basic)</div>
+            <div class="metric-value">₹115.56</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">Dividend Declared</div>
+            <div class="metric-value">₹20.57/share</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">Book Value / Share</div>
+            <div class="metric-value">₹365.12</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">Return on Net Worth</div>
+            <div class="metric-value accent">31.6%</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">Debt-to-Equity</div>
+            <div class="metric-value positive">0.00x</div>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <div class="metric-label">Market Capitalisation</div>
+            <div class="metric-value">₹72,400 Cr</div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════
+           VIEW 2: MEGA-PROJECT & SPATIAL UTILIZATION (TACTICAL)
+           Simulates SAP-PS (Project System) + SAP-PM
+           ══════════════════════════════════════════════════ -->
+      <section id="view-tactical" class="view hidden">
+
+        <div class="view-header">
+          <div class="view-title-block">
+            <div class="view-label">TACTICAL MIS · SAP-PS / SAP-PM INTEGRATION LAYER</div>
+            <h1 class="view-title">Mega-Project &amp; Spatial Utilization Dashboard</h1>
+            <p class="view-subtitle">Live Portfolio Tracking — Schedule Performance Index · Cost Variance · Dock Utilisation</p>
+          </div>
+          <button class="primary-btn" id="openAddProjectModal">
+            <i class="fas fa-plus"></i> ADD PROJECT
           </button>
         </div>
 
-        <div
-          id="projectFormMessage"
-          class="text-xs text-green-700 mt-1 hidden"
-        >
-          Project added to local storage and grid.
+        <!-- PROJECT PORTFOLIO GRID (SAP-PS) -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-table-list"></i> Project Portfolio · Budget vs Actual (SAP-PS Mock)</div>
+            <div class="panel-badge">3 ACTIVE PROGRAMMES</div>
+          </div>
+          <div class="panel-body">
+            <div id="projectsGrid" class="grid-wrap"></div>
+          </div>
         </div>
-      </form>
+
+        <!-- SPATIAL / DOCK UTILIZATION -->
+        <div class="panel mt-4">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-warehouse"></i> Dry Dock &amp; Spatial Asset Utilisation (SAP-PM Mock)</div>
+            <div class="panel-badge">NHAVA SHEVA · EAST YARD</div>
+          </div>
+          <div class="panel-body">
+            <div class="dock-grid">
+              <!-- Dock cards -->
+              <div class="dock-card">
+                <div class="dock-header">
+                  <div class="dock-id">DOCK-1</div>
+                  <div class="dock-status status-occupied">OCCUPIED</div>
+                </div>
+                <div class="dock-name">East Yard · Dry Dock No. 1</div>
+                <div class="dock-project">P17A Stealth Frigates (Berth 3)</div>
+                <div class="dock-util-bar"><div class="dock-util-fill" style="width:88%"></div></div>
+                <div class="dock-meta">Utilisation: <strong>88%</strong> · Next availability: Q2 FY26</div>
+              </div>
+              <div class="dock-card">
+                <div class="dock-header">
+                  <div class="dock-id">DOCK-2</div>
+                  <div class="dock-status status-occupied">OCCUPIED</div>
+                </div>
+                <div class="dock-name">East Yard · Dry Dock No. 2</div>
+                <div class="dock-project">P75 Scorpène Submarines (Final Fit)</div>
+                <div class="dock-util-bar"><div class="dock-util-fill" style="width:95%"></div></div>
+                <div class="dock-meta">Utilisation: <strong>95%</strong> · Critical Path Active</div>
+              </div>
+              <div class="dock-card dock-card-special">
+                <div class="dock-header">
+                  <div class="dock-id">FDD-NH</div>
+                  <div class="dock-status status-partial">PARTIAL USE</div>
+                </div>
+                <div class="dock-name">Nhava Sheva Floating Dry Dock</div>
+                <div class="dock-project">Merchant Export Programme (Navis)</div>
+                <div class="dock-util-bar"><div class="dock-util-fill util-yellow" style="width:52%"></div></div>
+                <div class="dock-meta">Utilisation: <strong>52%</strong> · Capacity: 20,000 DWT</div>
+              </div>
+              <div class="dock-card">
+                <div class="dock-header">
+                  <div class="dock-id">CRANE-E</div>
+                  <div class="dock-status status-operational">OPERATIONAL</div>
+                </div>
+                <div class="dock-name">East Yard · 180-Tonne Goliath Crane</div>
+                <div class="dock-project">Module lifts: P15B / P17A blocks</div>
+                <div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:74%"></div></div>
+                <div class="dock-meta">Utilisation: <strong>74%</strong> · OEE: 91% · Next PM: 15 Aug</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════
+           VIEW 3: HUMAN CAPITAL & HSE (OPERATIONAL / TPS)
+           Simulates SAP-HCM + SAP-EHS
+           ══════════════════════════════════════════════════ -->
+      <section id="view-hcm" class="view hidden">
+
+        <div class="view-header">
+          <div class="view-title-block">
+            <div class="view-label">OPERATIONAL TPS · SAP-HCM / SAP-EHS INTEGRATION LAYER</div>
+            <h1 class="view-title">Human Capital &amp; HSE Command</h1>
+            <p class="view-subtitle">Workforce Analytics · Near-Miss Incident Logger · Sub-Contractor Hours Tracking</p>
+          </div>
+        </div>
+
+        <!-- WORKFORCE KPI STRIP -->
+        <div class="workforce-kpis">
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Permanent Headcount</div>
+            <div class="wf-kpi-value">2,614</div>
+            <div class="wf-kpi-sub">↑ 48 from FY24</div>
+          </div>
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Contract / Sub-Con</div>
+            <div class="wf-kpi-value">~4,800</div>
+            <div class="wf-kpi-sub">Peak deployment</div>
+          </div>
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Revenue / Employee</div>
+            <div class="wf-kpi-value accent">₹47.17M</div>
+            <div class="wf-kpi-sub">+19.2% YoY productivity</div>
+          </div>
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Lost Time Injury Rate</div>
+            <div class="wf-kpi-value positive">0.41</div>
+            <div class="wf-kpi-sub">per 200,000 man-hrs</div>
+          </div>
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Near-Miss (YTD)</div>
+            <div class="wf-kpi-value" id="kpi-near-miss">--</div>
+            <div class="wf-kpi-sub">Logged this session</div>
+          </div>
+          <div class="wf-kpi">
+            <div class="wf-kpi-label">Sub-Con Hrs (YTD)</div>
+            <div class="wf-kpi-value" id="kpi-subcon-hrs">--</div>
+            <div class="wf-kpi-sub">Cumulative this session</div>
+          </div>
+        </div>
+
+        <!-- SPLIT: LOGGER + GRID -->
+        <div class="hse-split">
+          <!-- LEFT: ENTRY FORM (SAP-EHS Transaction) -->
+          <div class="panel hse-form-panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="fas fa-pen-to-square"></i> HSE Incident / Sub-Con Logger</div>
+              <div class="panel-badge">TPS ENTRY</div>
+            </div>
+            <div class="panel-body">
+              <div class="form-group">
+                <label class="form-label">Log Type</label>
+                <select class="form-select" id="hseLogType">
+                  <option value="near-miss">Near-Miss Incident</option>
+                  <option value="subcon">Sub-Contractor Hours</option>
+                  <option value="hazard">Hazard Observation</option>
+                  <option value="toolbox">Toolbox Talk</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Shift / Zone</label>
+                <select class="form-select" id="hseShift">
+                  <option value="A-East">A Shift · East Yard</option>
+                  <option value="B-East">B Shift · East Yard</option>
+                  <option value="A-West">A Shift · West Yard</option>
+                  <option value="B-West">B Shift · West Yard</option>
+                  <option value="NH-Dock">Nhava Sheva · FDD Zone</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Description / Activity</label>
+                <textarea class="form-textarea" id="hseDescription" rows="3" placeholder="e.g. Worker slip near Dock-2 walkway — no injury. PPE worn. Wet surface."></textarea>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label class="form-label">Personnel / Contractor ID</label>
+                  <input class="form-input" id="hsePersonnel" type="text" placeholder="e.g. CTR-2841" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Man-Hours (if sub-con)</label>
+                  <input class="form-input" id="hseHours" type="number" min="0" step="0.5" placeholder="e.g. 8.5" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Severity / Priority</label>
+                <div class="severity-selector" id="severitySelector">
+                  <button class="sev-btn sev-low active" data-sev="LOW">LOW</button>
+                  <button class="sev-btn sev-med" data-sev="MED">MEDIUM</button>
+                  <button class="sev-btn sev-high" data-sev="HIGH">HIGH</button>
+                  <button class="sev-btn sev-crit" data-sev="CRIT">CRITICAL</button>
+                </div>
+              </div>
+              <button class="primary-btn full-width mt-3" id="logHseBtn">
+                <i class="fas fa-save"></i> COMMIT LOG ENTRY
+              </button>
+              <div class="form-success hidden" id="hseFormMsg">
+                <i class="fas fa-check-circle"></i> Entry committed to localStorage (SAP-EHS Mock)
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: LIVE GRID -->
+          <div class="panel hse-grid-panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="fas fa-table"></i> Live Incident &amp; Activity Register</div>
+              <div class="panel-badge" id="hseEntryCount">0 ENTRIES</div>
+            </div>
+            <div class="panel-body">
+              <div id="hseGrid" class="grid-wrap"></div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ═════════════════════════════
+     ADD PROJECT MODAL (SAP-PS)
+     ═════════════════════════════ -->
+<div id="addProjectModal" class="modal-overlay hidden" aria-hidden="true">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <div class="modal-label">SAP-PS · CREATE PROJECT OBJECT</div>
+        <div class="modal-title">Add New Project to Portfolio</div>
+      </div>
+      <button class="modal-close" id="closeProjectModal"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label">Project WBS Code</label>
+          <input class="form-input" id="mProjId" type="text" placeholder="e.g. P19A" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-select" id="mProjStatus">
+            <option>On Track</option>
+            <option>Slight Overrun</option>
+            <option>Managed Overrun</option>
+            <option>Underrun</option>
+            <option>On Hold</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Project Description</label>
+        <input class="form-input" id="mProjDesc" type="text" placeholder="e.g. Next-Gen Corvette Programme (P29A)" required />
+      </div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">Contract Value (₹ Cr)</label>
+          <input class="form-input" id="mProjValue" type="number" min="0" step="0.1" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Remaining Balance (₹ Cr)</label>
+          <input class="form-input" id="mProjBalance" type="number" min="0" step="0.1" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">SPI (Schedule Perf. Index)</label>
+          <input class="form-input" id="mProjSpi" type="number" min="0" max="2" step="0.01" placeholder="1.00" required />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary-btn" id="cancelProjectModal">CANCEL</button>
+        <button class="primary-btn" id="saveProjectBtn"><i class="fas fa-check"></i> SAVE TO SAP-PS</button>
+      </div>
+      <div class="form-success hidden" id="projModalMsg">
+        <i class="fas fa-check-circle"></i> Project persisted to localStorage (SAP-PS Mock)
+      </div>
     </div>
   </div>
+</div>
 
-  <!-- Application Logic -->
-  <script src="app.js"></script>
+<!-- Application Logic -->
+<script src="app.js"></script>
 </body>
 </html>
-
