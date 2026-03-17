@@ -1,40 +1,27 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════
- * MDL DIGITAL SHIPYARD MIS v5.0 · app.js
+ * MDL DIGITAL SHIPYARD MIS v5.1 · app.js
+ * Bug-fix release — all syntax errors corrected
  *
- * KEY ADDITIONS IN v5.0 (from MIS_Improvement_and_Data_Integration.docx):
+ * FIXES IN v5.1:
+ *   - SyntaxError on lines 703, 766: nested template literal inside
+ *     gridjs.html() IIFE caused parser failures. Replaced all IIFE
+ *     patterns with plain helper functions that return strings.
+ *   - RBAC overlay click handlers now correctly call selectRole()
+ *     before any other wiring so DOM elements exist when wired.
+ *   - bootstrapMockData() moved inside selectRole() to guarantee
+ *     it runs after DOM is visible.
+ *   - Account Switcher dropdown z-index and click-outside handler fixed.
+ *   - All gridjs.html() calls use simple string concatenation or
+ *     pre-built helper functions — no IIFE, no nested backtick quotes.
  *
- * 1. RBAC ENGINE
- *    - 6 roles: Super Admin, Executive Director, Project Commander,
- *      Financial Controller, Supply Chain Officer, Floor Supervisor
- *    - Each role sees only its permitted sidebar modules
- *    - Account Switcher re-issues "JWT" (localStorage session token)
- *    - Immutable Audit Log records every role switch + action
- *    - Principle of Least Privilege enforced at DOM level
- *
- * 2. CORRECTED FINANCIAL DATA (from document table)
- *    - Revenue: ₹11,431.88 Cr (FY25) vs ₹9,466.58 Cr (FY24)
- *    - Total Income: ₹12,553.10 Cr vs ₹10,568.10 Cr
- *    - EBITDA: ₹3,228.80 Cr (+95.8% YoY)
- *    - PBT: ₹3,109.20 Cr (+28.2%)
- *    - Depreciation: +38.6% YoY
- *    - Dividend: ₹23.19 (1st interim) + ₹3.00 (2nd interim)
- *    - Finance costs: ↓9.6% YoY
- *    - Promoter holding: 84.83%
- *
- * 3. WORKFORCE TREND (5-year headcount from document)
- *    - FY21: 3,687 → FY22: 3,344 → FY23: 2,988 → FY24: 2,814 → FY25: 2,614
- *    - Revenue/employee: ₹47.17M · Profit/employee: ₹9.21M
- *
- * 4. P15B VESSEL TRACKING TABLE (keel/launch/commission dates)
- * 5. P-75I PIPELINE (₹70,000–₹1,00,000 Cr · MDL-TKMS JV)
- * 6. CSR SECTORAL BREAKDOWN (69% Health, 20% Ed, 2% R&D, 9% Other)
- * 7. JPC steel price mock API + Import/Export trade intelligence
- *
- * RBAC localStorage mock maps to production JWT flow:
- *   Login     → POST /api/auth/login       → JWT {userId, roles[], activeRole}
- *   Switch    → POST /api/auth/switch-role → New JWT {activeRole: newRole}
- *   API calls → Authorization: Bearer <JWT> → Middleware checks activeRole
+ * ARCHITECTURE: localStorage-based SAP integration mock
+ *   MODULE          SAP EQUIVALENT      localStorage KEY
+ *   Financial (ESS) SAP-FI/CO + BW      mdl_v5_strategic
+ *   Projects        SAP-PS              mdl_v5_projects
+ *   Supply / ROMIS  SAP-MM              mdl_v5_materials / inventory / vendors
+ *   HSE / HCM       SAP-EHS + SAP-HCM   mdl_v5_hse
+ *   Audit           SAP Security Log    mdl_v5_audit
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -42,22 +29,26 @@
 
 // ─── Storage keys ──────────────────────────────────────────────────
 const KEYS = {
-  INIT:       "mdl_v5_initialized",
-  STRATEGIC:  "mdl_v5_strategic",
-  PROJECTS:   "mdl_v5_projects",
-  MATERIALS:  "mdl_v5_materials",
-  INVENTORY:  "mdl_v5_inventory",
-  VENDORS:    "mdl_v5_vendors",
-  HSE:        "mdl_v5_hse",
-  SESSION:    "mdl_v5_session",    // Active RBAC session (JWT mock)
-  AUDIT:      "mdl_v5_audit",      // Immutable audit trail
+  INIT:      "mdl_v5_initialized",
+  STRATEGIC: "mdl_v5_strategic",
+  PROJECTS:  "mdl_v5_projects",
+  MATERIALS: "mdl_v5_materials",
+  INVENTORY: "mdl_v5_inventory",
+  VENDORS:   "mdl_v5_vendors",
+  HSE:       "mdl_v5_hse",
+  SESSION:   "mdl_v5_session",
+  AUDIT:     "mdl_v5_audit",
 };
 
-// ─── Storage abstraction ───────────────────────────────────────────
+// ─── Storage layer (SAP RFC mock) ──────────────────────────────────
 const DB = {
   get(key, fallback) {
-    try { const r = localStorage.getItem(key); return r === null ? fallback : JSON.parse(r); }
-    catch (e) { return fallback; }
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) {
+      return fallback;
+    }
   },
   set(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -67,273 +58,365 @@ const DB = {
 
 // ═══════════════════════════════════════════════════════════════════
 // RBAC ROLE DEFINITIONS
-// Mirrors production backend RBAC matrix (doc §Engineering Account Switcher)
 // ═══════════════════════════════════════════════════════════════════
 const RBAC_ROLES = [
   {
-    key: "super-admin",
-    name: "Super Administrator",
-    persona: "IT Systems Director",
-    icon: "fa-shield-halved",
-    clearance: "SECRET",
-    clearanceCls: "clr-secret",
-    permissions: ["ess","projects","supply","hcm","compliance","audit"],
-    description: "Full CRUD · All modules · Role assignments · Audit logs",
-    color: "#ff4d4d",
+    key:        "super-admin",
+    name:       "Super Administrator",
+    persona:    "IT Systems Director",
+    icon:       "fa-shield-halved",
+    clearance:  "SECRET",
+    clsCls:     "clr-secret",
+    color:      "#ff4d4d",
+    permissions:["ess","projects","supply","hcm","compliance","audit"],
+    description:"Full CRUD · All modules · Role assignments · Audit logs",
   },
   {
-    key: "executive",
-    name: "Executive Director",
-    persona: "Board Member / C-Suite",
-    icon: "fa-briefcase",
-    clearance: "CONFIDENTIAL",
-    clearanceCls: "clr-conf",
-    permissions: ["ess","projects","compliance","audit"],
-    description: "Read-only macro dashboards · Financials · Order Book · Strategic KPIs",
-    color: "#f5c842",
+    key:        "executive",
+    name:       "Executive Director",
+    persona:    "Board Member / C-Suite",
+    icon:       "fa-briefcase",
+    clearance:  "CONFIDENTIAL",
+    clsCls:     "clr-conf",
+    color:      "#f5c842",
+    permissions:["ess","projects","compliance","audit"],
+    description:"Read-only macro dashboards · Financials · Order Book · Strategic KPIs",
   },
   {
-    key: "project-commander",
-    name: "Project Commander",
-    persona: "Warship / Submarine Lead",
-    icon: "fa-anchor",
-    clearance: "SECRET",
-    clearanceCls: "clr-secret",
-    permissions: ["projects","supply","audit"],
-    description: "CRUD on assigned projects · Milestones · Material requests",
-    color: "#2075ff",
+    key:        "project-commander",
+    name:       "Project Commander",
+    persona:    "Warship / Submarine Lead",
+    icon:       "fa-anchor",
+    clearance:  "SECRET",
+    clsCls:     "clr-secret",
+    color:      "#2075ff",
+    permissions:["projects","supply","audit"],
+    description:"CRUD on assigned projects · Milestones · Material requests",
   },
   {
-    key: "financial-controller",
-    name: "Financial Controller",
-    persona: "Accounting Manager",
-    icon: "fa-chart-line",
-    clearance: "CONFIDENTIAL",
-    clearanceCls: "clr-conf",
-    permissions: ["ess","audit"],
-    description: "Financial ledger · Cash flow · Vendor payments · Budget approvals",
-    color: "#f5c842",
+    key:        "financial-controller",
+    name:       "Financial Controller",
+    persona:    "Accounting Manager",
+    icon:       "fa-chart-line",
+    clearance:  "CONFIDENTIAL",
+    clsCls:     "clr-conf",
+    color:      "#f5c842",
+    permissions:["ess","audit"],
+    description:"Financial ledger · Cash flow · Vendor payments · Budget approvals",
   },
   {
-    key: "supply-officer",
-    name: "Supply Chain Officer",
-    persona: "Procurement Lead",
-    icon: "fa-boxes-stacked",
-    clearance: "RESTRICTED",
-    clearanceCls: "clr-rest",
-    permissions: ["supply","audit"],
-    description: "Vendor database · Inventory · ROMIS · Indigenization data",
-    color: "#00e5a0",
+    key:        "supply-officer",
+    name:       "Supply Chain Officer",
+    persona:    "Procurement Lead",
+    icon:       "fa-boxes-stacked",
+    clearance:  "RESTRICTED",
+    clsCls:     "clr-rest",
+    color:      "#00e5a0",
+    permissions:["supply","audit"],
+    description:"Vendor database · Inventory · ROMIS · Indigenization data",
   },
   {
-    key: "floor-supervisor",
-    name: "Floor Supervisor",
-    persona: "Yard Master / Foreman",
-    icon: "fa-hard-hat",
-    clearance: "RESTRICTED",
-    clearanceCls: "clr-rest",
-    permissions: ["hcm","audit"],
-    description: "Worker attendance · Slipway allocation · LTIFR safety incident reporting",
-    color: "#00e5a0",
+    key:        "floor-supervisor",
+    name:       "Floor Supervisor",
+    persona:    "Yard Master / Foreman",
+    icon:       "fa-hard-hat",
+    clearance:  "RESTRICTED",
+    clsCls:     "clr-rest",
+    color:      "#00e5a0",
+    permissions:["hcm","audit"],
+    description:"Worker attendance · Slipway allocation · HIRA safety incident reporting",
   },
 ];
 
-// All sidebar items and which module they map to
+// Sidebar module definitions
 const SIDEBAR_MODULES = [
-  { view:"ess",        icon:"fa-satellite-dish", title:"Financial Command",     sub:"SAP-FI/CO · ESS Layer"      },
-  { view:"projects",   icon:"fa-anchor",          title:"Project & Spatial MIS",sub:"SAP-PS · Portfolio View"    },
-  { view:"supply",     icon:"fa-boxes-stacked",   title:"Supply Chain & Vendors",sub:"SAP-MM · ROMIS"            },
-  { view:"hcm",        icon:"fa-hard-hat",        title:"Human Capital & HSE",  sub:"SAP-HCM / SAP-EHS · TPS"   },
-  { view:"compliance", icon:"fa-flag",            title:"Indigenization & CSR", sub:"Compliance · Aatmanirbhar" },
-  { view:"audit",      icon:"fa-scroll",          title:"Audit Log",            sub:"RBAC · Immutable Trail"    },
+  { view:"ess",        icon:"fa-satellite-dish", title:"Financial Command",      sub:"SAP-FI/CO · ESS Layer"       },
+  { view:"projects",   icon:"fa-anchor",          title:"Project & Spatial MIS", sub:"SAP-PS · Portfolio View"     },
+  { view:"supply",     icon:"fa-boxes-stacked",   title:"Supply Chain & Vendors",sub:"SAP-MM · ROMIS"              },
+  { view:"hcm",        icon:"fa-hard-hat",        title:"Human Capital & HSE",   sub:"SAP-HCM / SAP-EHS · TPS"    },
+  { view:"compliance", icon:"fa-flag",            title:"Indigenization & CSR",  sub:"Compliance · Aatmanirbhar"  },
+  { view:"audit",      icon:"fa-scroll",          title:"Audit Log",             sub:"RBAC · Immutable Trail"     },
 ];
 
-// ─── Active session ─────────────────────────────────────────────────
-let activeRole = null;   // full role object
-let auditTrail = [];     // in-memory mirror of localStorage audit log
+// ─── Active session state ───────────────────────────────────────────
+let activeRole = null;
 
 // ─── Audit logger ───────────────────────────────────────────────────
-function logAudit(action, detail="") {
-  const entry = {
+function logAudit(action, detail) {
+  detail = detail || "";
+  var entry = {
     id:        crypto.randomUUID(),
     ts:        Date.now(),
     userId:    activeRole ? activeRole.name : "SYSTEM",
-    role:      activeRole ? activeRole.key : "—",
+    role:      activeRole ? activeRole.key  : "—",
     clearance: activeRole ? activeRole.clearance : "—",
-    action,
-    detail,
+    action:    action,
+    detail:    detail,
   };
-  const logs = DB.get(KEYS.AUDIT, []);
+  var logs = DB.get(KEYS.AUDIT, []);
   logs.unshift(entry);
   DB.set(KEYS.AUDIT, logs);
-  auditTrail = logs;
-  if (currentView === "audit") renderAuditGrid();
   updateAuditBadge();
+  if (currentView === "audit") renderAuditGrid();
 }
 
 function updateAuditBadge() {
-  const el = document.getElementById("auditCount");
+  var el = document.getElementById("auditCount");
   if (el) el.textContent = DB.get(KEYS.AUDIT, []).length + " EVENTS";
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// RBAC OVERLAY — role selection on first load
-// In production: replaced by SSO/JWT login endpoint
+// RBAC OVERLAY — role selection
 // ═══════════════════════════════════════════════════════════════════
 function buildRBACOverlay() {
-  const container = document.getElementById("rbacRoles");
+  var container = document.getElementById("rbacRoles");
   if (!container) return;
   container.innerHTML = "";
-  RBAC_ROLES.forEach(role => {
-    const btn = document.createElement("button");
+
+  RBAC_ROLES.forEach(function(role) {
+    var btn = document.createElement("button");
     btn.className = "rbac-role-btn";
-    btn.innerHTML = `
-      <div class="rbac-role-icon" style="color:${role.color};background:rgba(${hexToRgbStr(role.color)},0.1);border:1px solid rgba(${hexToRgbStr(role.color)},0.3)">
-        <i class="fas ${role.icon}"></i>
-      </div>
-      <div style="flex:1;text-align:left">
-        <span class="rbac-role-name">${role.name}</span>
-        <span class="rbac-role-desc">${role.persona} · ${role.description}</span>
-      </div>
-      <span class="rbac-role-clearance ${role.clearanceCls}">${role.clearance}</span>
-    `;
-    btn.addEventListener("click", () => selectRole(role));
+    btn.type = "button";
+
+    var iconDiv = document.createElement("div");
+    iconDiv.className = "rbac-role-icon";
+    iconDiv.style.cssText = "color:" + role.color + ";background:rgba(0,0,0,0.2);border:1px solid " + role.color + "44";
+    iconDiv.innerHTML = '<i class="fas ' + role.icon + '"></i>';
+
+    var textDiv = document.createElement("div");
+    textDiv.style.cssText = "flex:1;text-align:left";
+
+    var nameSpan = document.createElement("span");
+    nameSpan.className = "rbac-role-name";
+    nameSpan.textContent = role.name;
+
+    var descSpan = document.createElement("span");
+    descSpan.className = "rbac-role-desc";
+    descSpan.textContent = role.persona + " · " + role.description;
+
+    textDiv.appendChild(nameSpan);
+    textDiv.appendChild(descSpan);
+
+    var clrSpan = document.createElement("span");
+    clrSpan.className = "rbac-role-clearance " + role.clsCls;
+    clrSpan.textContent = role.clearance;
+
+    btn.appendChild(iconDiv);
+    btn.appendChild(textDiv);
+    btn.appendChild(clrSpan);
+
+    // Use a closure to capture the correct role reference
+    (function(r) {
+      btn.addEventListener("click", function() {
+        selectRole(r);
+      });
+    })(role);
+
     container.appendChild(btn);
   });
 }
 
-function hexToRgbStr(hex) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  return `${r},${g},${b}`;
-}
-
 function selectRole(role) {
   activeRole = role;
-  // Mock JWT issuance: store session
   DB.set(KEYS.SESSION, { roleKey: role.key, ts: Date.now() });
-  logAudit("LOGIN", `Role selected: ${role.name} · Clearance: ${role.clearance}`);
 
-  // Hide overlay, show app
-  document.getElementById("rbacOverlay").style.display = "none";
-  document.getElementById("appShell").style.display = "flex";
+  // Hide overlay, reveal app
+  var overlay = document.getElementById("rbacOverlay");
+  var shell   = document.getElementById("appShell");
+  if (overlay) overlay.style.display = "none";
+  if (shell)   shell.style.display   = "flex";
 
+  // Seed data if first load
+  bootstrapMockData();
+
+  // Wire UI
+  startClock();
   buildSidebar();
   updateUserChip();
   buildSwitcherDropdown();
-  startClock();
   wireNavigation();
   wireProjectModal();
   wireMaterialLogger();
   wireSeveritySelector();
   wireHSEForm();
   wireAccountSwitcher();
-  bootstrapMockData();
+
+  logAudit("LOGIN", "Role: " + role.name + " · Clearance: " + role.clearance);
 
   // Navigate to first permitted view
-  const firstView = role.permissions.filter(p => p !== "audit")[0] || "audit";
+  var firstView = role.permissions.filter(function(p) { return p !== "audit"; })[0] || "audit";
   setActiveView(firstView);
 }
 
-// ─── Account Switcher (in-session role change) ─────────────────────
+// ─── Account Switcher (in-session role toggle) ─────────────────────
 function buildSwitcherDropdown() {
-  const list = document.getElementById("switcherRoleList");
+  var list = document.getElementById("switcherRoleList");
   if (!list) return;
   list.innerHTML = "";
-  RBAC_ROLES.forEach(role => {
-    const item = document.createElement("div");
-    item.className = "switcher-role-item" + (role.key === activeRole.key ? " active-role" : "");
-    item.innerHTML = `
-      <i class="fas ${role.icon} sw-role-icon" style="color:${role.color}"></i>
-      <div>
-        <div class="sw-role-name">${role.name}</div>
-        <div class="sw-role-sub">${role.persona}</div>
-      </div>
-      ${role.key === activeRole.key ? '<span class="sw-active-badge">ACTIVE</span>' : ''}
-    `;
-    item.addEventListener("click", () => switchRole(role));
+
+  RBAC_ROLES.forEach(function(role) {
+    var item = document.createElement("div");
+    item.className = "switcher-role-item" + (activeRole && role.key === activeRole.key ? " active-role" : "");
+
+    var icon = document.createElement("i");
+    icon.className = "fas " + role.icon + " sw-role-icon";
+    icon.style.color = role.color;
+
+    var textDiv = document.createElement("div");
+
+    var nameDiv = document.createElement("div");
+    nameDiv.className = "sw-role-name";
+    nameDiv.textContent = role.name;
+
+    var subDiv = document.createElement("div");
+    subDiv.className = "sw-role-sub";
+    subDiv.textContent = role.persona;
+
+    textDiv.appendChild(nameDiv);
+    textDiv.appendChild(subDiv);
+
+    item.appendChild(icon);
+    item.appendChild(textDiv);
+
+    if (activeRole && role.key === activeRole.key) {
+      var badge = document.createElement("span");
+      badge.className = "sw-active-badge";
+      badge.textContent = "ACTIVE";
+      item.appendChild(badge);
+    }
+
+    (function(r) {
+      item.addEventListener("click", function() { switchRole(r); });
+    })(role);
+
     list.appendChild(item);
   });
 }
 
 function switchRole(newRole) {
-  if (newRole.key === activeRole.key) { toggleSwitcher(false); return; }
-  const prevRole = activeRole.name;
+  if (activeRole && newRole.key === activeRole.key) {
+    toggleSwitcher(false);
+    return;
+  }
+  var prevName = activeRole ? activeRole.name : "none";
   activeRole = newRole;
   DB.set(KEYS.SESSION, { roleKey: newRole.key, ts: Date.now() });
-  logAudit("ROLE_SWITCH", `From: ${prevRole} → To: ${newRole.name} · New clearance: ${newRole.clearance}`);
+  logAudit("ROLE_SWITCH", "From: " + prevName + " → To: " + newRole.name);
 
   updateUserChip();
   buildSidebar();
   buildSwitcherDropdown();
   toggleSwitcher(false);
 
-  // Re-render to first permitted view
-  const firstView = newRole.permissions.filter(p => p !== "audit")[0] || "audit";
   currentView = null;
+  var firstView = newRole.permissions.filter(function(p) { return p !== "audit"; })[0] || "audit";
   setActiveView(firstView);
 }
 
 function updateUserChip() {
   if (!activeRole) return;
-  document.getElementById("userNameDisplay").textContent = activeRole.name.toUpperCase();
-  document.getElementById("userRoleDisplay").textContent = activeRole.clearance + " CLEARANCE";
-  document.getElementById("metaRole").textContent = activeRole.name;
-  document.getElementById("metaClearance").textContent = activeRole.clearance + " · " + activeRole.persona;
-  const icon = document.getElementById("userAvatarIcon");
-  if (icon) icon.innerHTML = `<i class="fas ${activeRole.icon}"></i>`;
+  var nameEl = document.getElementById("userNameDisplay");
+  var roleEl = document.getElementById("userRoleDisplay");
+  var metaRole = document.getElementById("metaRole");
+  var metaClear = document.getElementById("metaClearance");
+  var iconEl = document.getElementById("userAvatarIcon");
+  if (nameEl)   nameEl.textContent   = activeRole.name.toUpperCase();
+  if (roleEl)   roleEl.textContent   = activeRole.clearance + " CLEARANCE";
+  if (metaRole) metaRole.textContent = activeRole.name;
+  if (metaClear)metaClear.textContent= activeRole.clearance + " · " + activeRole.persona;
+  if (iconEl)   iconEl.innerHTML     = '<i class="fas ' + activeRole.icon + '"></i>';
 }
 
+var switcherWired = false;
 function wireAccountSwitcher() {
-  const btn     = document.getElementById("userChipBtn");
-  const dropdown= document.getElementById("switcherDropdown");
-  const chevron = document.getElementById("userChevron");
-  const auditBtn= document.getElementById("auditLogBtn");
+  if (switcherWired) return;
+  switcherWired = true;
 
-  btn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isOpen = !dropdown.classList.contains("hidden");
-    toggleSwitcher(!isOpen);
-  });
+  var btn      = document.getElementById("userChipBtn");
+  var dropdown = document.getElementById("switcherDropdown");
+  var auditBtn = document.getElementById("auditLogBtn");
 
-  auditBtn?.addEventListener("click", () => {
+  if (btn) {
+    btn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      var isOpen = dropdown && !dropdown.classList.contains("hidden");
+      toggleSwitcher(!isOpen);
+    });
+  }
+
+  if (auditBtn) {
+    auditBtn.addEventListener("click", function() {
+      toggleSwitcher(false);
+      setActiveView("audit");
+    });
+  }
+
+  document.addEventListener("click", function() {
     toggleSwitcher(false);
-    setActiveView("audit");
   });
 
-  document.addEventListener("click", () => toggleSwitcher(false));
-  dropdown?.addEventListener("click", e => e.stopPropagation());
+  if (dropdown) {
+    dropdown.addEventListener("click", function(e) {
+      e.stopPropagation();
+    });
+  }
 }
 
 function toggleSwitcher(open) {
-  const dropdown = document.getElementById("switcherDropdown");
-  const chevron  = document.getElementById("userChevron");
+  var dropdown = document.getElementById("switcherDropdown");
+  var chevron  = document.getElementById("userChevron");
   if (!dropdown) return;
-  dropdown.classList.toggle("hidden", !open);
-  chevron?.classList.toggle("open", open);
+  if (open) {
+    dropdown.classList.remove("hidden");
+  } else {
+    dropdown.classList.add("hidden");
+  }
+  if (chevron) chevron.classList.toggle("open", open);
 }
 
 // ─── Sidebar builder (RBAC-filtered) ───────────────────────────────
 function buildSidebar() {
-  const nav = document.getElementById("sidebarNav");
+  var nav = document.getElementById("sidebarNav");
   if (!nav || !activeRole) return;
   nav.innerHTML = "";
-  SIDEBAR_MODULES.forEach(mod => {
-    if (!activeRole.permissions.includes(mod.view)) return;
-    const el = document.createElement("div");
+
+  SIDEBAR_MODULES.forEach(function(mod) {
+    if (activeRole.permissions.indexOf(mod.view) === -1) return;
+
+    var el = document.createElement("div");
     el.className = "sidebar-item";
     el.dataset.view = mod.view;
-    el.innerHTML = `
-      <i class="fas ${mod.icon}"></i>
-      <div class="sidebar-item-text">
-        <span class="sidebar-item-title">${mod.title}</span>
-        <span class="sidebar-item-sub">${mod.sub}</span>
-      </div>
-      <div class="sidebar-indicator"></div>
-    `;
-    el.addEventListener("click", () => {
-      logAudit("NAV", `Navigated to: ${mod.title}`);
-      setActiveView(mod.view);
-    });
+
+    var icon = document.createElement("i");
+    icon.className = "fas " + mod.icon;
+
+    var textDiv = document.createElement("div");
+    textDiv.className = "sidebar-item-text";
+
+    var titleSpan = document.createElement("span");
+    titleSpan.className = "sidebar-item-title";
+    titleSpan.textContent = mod.title;
+
+    var subSpan = document.createElement("span");
+    subSpan.className = "sidebar-item-sub";
+    subSpan.textContent = mod.sub;
+
+    var indicator = document.createElement("div");
+    indicator.className = "sidebar-indicator";
+
+    textDiv.appendChild(titleSpan);
+    textDiv.appendChild(subSpan);
+    el.appendChild(icon);
+    el.appendChild(textDiv);
+    el.appendChild(indicator);
+
+    (function(view, title) {
+      el.addEventListener("click", function() {
+        logAudit("NAV", "Navigated to: " + title);
+        setActiveView(view);
+      });
+    })(mod.view, mod.title);
+
     nav.appendChild(el);
   });
 }
@@ -344,27 +427,24 @@ function buildSidebar() {
 function bootstrapMockData() {
   if (localStorage.getItem(KEYS.INIT)) return;
 
-  // SAP-FI/CO: Corrected figures from document
   DB.set(KEYS.STRATEGIC, {
-    revenue: { fy21:4200, fy22:5100, fy23:7192, fy24:9467, fy25:11432 },
-    pat:     { fy21:620,  fy22:810,  fy23:1385, fy24:1845, fy25:2325  },
+    revenue: { fy21:4200,  fy22:5100,  fy23:7192,  fy24:9467,  fy25:11432 },
+    pat:     { fy21:620,   fy22:810,   fy23:1385,  fy24:1845,  fy25:2325  },
     indigenization: { domestic:76, imports:24 },
   });
 
-  // SAP-PS: Full order book (March 31, 2025)
   DB.set(KEYS.PROJECTS, [
-    { id:"P17A",    description:"P17A · Nilgiri Class Stealth Frigates (4 of 7 at MDL)",     contractValue:28769, remaining:3716,  spi:0.97, indigenization:75, status:"On Track",       createdAt:Date.now()-86400000*180 },
-    { id:"P15B",    description:"P15B · Visakhapatnam Class Destroyers (4 vessels, MoD)",    contractValue:27120, remaining:4,     spi:1.02, indigenization:72, status:"On Track",       createdAt:Date.now()-86400000*365 },
-    { id:"P75",     description:"P75 · Kalvari Class Scorpène Submarines (6 boats, MoD)",   contractValue:23814, remaining:2493,  spi:1.02, indigenization:60, status:"On Track",       createdAt:Date.now()-86400000*400 },
-    { id:"P75-AIP", description:"P75 AIP Plug Retrofit · Air Independent Propulsion (MoD)", contractValue:1990,  remaining:1749,  spi:1.00, indigenization:52, status:"On Track",       createdAt:Date.now()-86400000*30  },
-    { id:"ICGS",    description:"ICGS · CTS / NGOPV / FPV (21 vessels, Coast Guard)",       contractValue:2829,  remaining:715,   spi:0.95, indigenization:68, status:"Slight Overrun", createdAt:Date.now()-86400000*90  },
-    { id:"OFF",     description:"Offshore Projects · PRPP / DSF-II / PRP (ONGC)",           contractValue:6524,  remaining:5409,  spi:0.91, indigenization:55, status:"Slight Overrun", createdAt:Date.now()-86400000*60  },
-    { id:"MRLC",    description:"Submarine MRLC · Medium Refit & Life Extension (MoD)",     contractValue:2381,  remaining:1711,  spi:0.98, indigenization:58, status:"On Track",       createdAt:Date.now()-86400000*50  },
-    { id:"MPV-EXP", description:"MPV Export · 6 Hybrid Vessels (Navi Merchants, Denmark)",  contractValue:710,   remaining:710,   spi:0.88, indigenization:42, status:"Slight Overrun", createdAt:Date.now()-86400000*10  },
-    { id:"MISC",    description:"Miscellaneous Support Projects (Various Entities)",          contractValue:256,   remaining:169,   spi:1.01, indigenization:65, status:"On Track",       createdAt:Date.now()-86400000*5   },
+    { id:"P17A",    description:"P17A · Nilgiri Class Stealth Frigates (4 of 7 vessels at MDL)",   contractValue:28769, remaining:3716,  spi:0.97, indigenization:75, status:"On Track",       createdAt:Date.now()-86400000*180 },
+    { id:"P15B",    description:"P15B · Visakhapatnam Class Destroyers (4 vessels, MoD)",          contractValue:27120, remaining:4,     spi:1.02, indigenization:72, status:"On Track",       createdAt:Date.now()-86400000*365 },
+    { id:"P75",     description:"P75 · Kalvari Class Scorpène Submarines (6 boats, MoD)",         contractValue:23814, remaining:2493,  spi:1.02, indigenization:60, status:"On Track",       createdAt:Date.now()-86400000*400 },
+    { id:"P75-AIP", description:"P75 AIP Plug Retrofit · Air Independent Propulsion (MoD)",       contractValue:1990,  remaining:1749,  spi:1.00, indigenization:52, status:"On Track",       createdAt:Date.now()-86400000*30  },
+    { id:"ICGS",    description:"ICGS · CTS / NGOPV / FPV Fleet (21 vessels, Coast Guard)",       contractValue:2829,  remaining:715,   spi:0.95, indigenization:68, status:"Slight Overrun", createdAt:Date.now()-86400000*90  },
+    { id:"OFF",     description:"Offshore Projects · PRPP / DSF-II / PRP (ONGC, 3 projects)",    contractValue:6524,  remaining:5409,  spi:0.91, indigenization:55, status:"Slight Overrun", createdAt:Date.now()-86400000*60  },
+    { id:"MRLC",    description:"Submarine MRLC · Medium Refit & Life Extension (MoD)",           contractValue:2381,  remaining:1711,  spi:0.98, indigenization:58, status:"On Track",       createdAt:Date.now()-86400000*50  },
+    { id:"MPV-EXP", description:"MPV Export · 6 Hybrid Vessels (Navi Merchants, Denmark)",        contractValue:710,   remaining:710,   spi:0.88, indigenization:42, status:"Slight Overrun", createdAt:Date.now()-86400000*10  },
+    { id:"MISC",    description:"Miscellaneous Support Projects (Various Entities)",               contractValue:256,   remaining:169,   spi:1.01, indigenization:65, status:"On Track",       createdAt:Date.now()-86400000*5   },
   ]);
 
-  // SAP-MM: Inventory
   DB.set(KEYS.INVENTORY, [
     { code:"RM-SP-DH36",  description:"Steel Plate Grade DH36 (Shipbuilding)", stock:348,   minThreshold:100, unit:"MT",  unitPrice:72000,   vendorId:"V-SAIL-01", status:"OK"  },
     { code:"RM-PP-HP316", description:"High-Pressure Alloy Pipe (SS 316L)",    stock:82,    minThreshold:120, unit:"Nos", unitPrice:15500,   vendorId:"V-TUBE-02", status:"LOW" },
@@ -376,27 +456,24 @@ function bootstrapMockData() {
     { code:"EQ-PUMP-BW",  description:"Ballast Water Pump (600 m³/hr)",        stock:6,     minThreshold:4,   unit:"Nos", unitPrice:1850000, vendorId:"V-PUMP-06", status:"OK"  },
   ]);
 
-  // SAP-MM: Vendor master
   DB.set(KEYS.VENDORS, [
-    { id:"V-SAIL-01",  name:"SAIL (Steel Authority of India)",    category:"PSU",   material:"Structural Steel",  greenChannel:false, emdExempt:true,  regExpiry:Date.now()+86400000*400, status:"Active" },
-    { id:"V-TUBE-02",  name:"Patton Tubing Pvt Ltd (MSME)",       category:"MSME",  material:"Pipes & Fittings",  greenChannel:true,  emdExempt:true,  regExpiry:Date.now()+86400000*45,  status:"Active" },
-    { id:"V-VALVE-03", name:"Kirloskar Brothers Limited",          category:"Large", material:"Valve Assemblies",  greenChannel:true,  emdExempt:false, regExpiry:Date.now()+86400000*300, status:"Active" },
-    { id:"V-ELEC-04",  name:"Havells India Ltd",                   category:"Large", material:"Cables & Elect.",   greenChannel:false, emdExempt:false, regExpiry:Date.now()+86400000*200, status:"Active" },
-    { id:"V-GEN-05",   name:"BHEL Bhopal (PSU)",                   category:"PSU",   material:"Gensets / Turbines",greenChannel:true,  emdExempt:true,  regExpiry:Date.now()+86400000*500, status:"Active" },
-    { id:"V-PUMP-06",  name:"Flowserve India Controls (MSME)",     category:"MSME",  material:"Pumps & Compressors",greenChannel:false, emdExempt:true,  regExpiry:Date.now()+86400000*80,  status:"Active" },
+    { id:"V-SAIL-01",  name:"SAIL (Steel Authority of India)",  category:"PSU",   material:"Structural Steel",   greenChannel:false, emdExempt:true,  regExpiry:Date.now()+86400000*400, status:"Active" },
+    { id:"V-TUBE-02",  name:"Patton Tubing Pvt Ltd (MSME)",     category:"MSME",  material:"Pipes & Fittings",   greenChannel:true,  emdExempt:true,  regExpiry:Date.now()+86400000*45,  status:"Active" },
+    { id:"V-VALVE-03", name:"Kirloskar Brothers Limited",        category:"Large", material:"Valve Assemblies",   greenChannel:true,  emdExempt:false, regExpiry:Date.now()+86400000*300, status:"Active" },
+    { id:"V-ELEC-04",  name:"Havells India Ltd",                 category:"Large", material:"Cables & Electrical",greenChannel:false, emdExempt:false, regExpiry:Date.now()+86400000*200, status:"Active" },
+    { id:"V-GEN-05",   name:"BHEL Bhopal (PSU)",                 category:"PSU",   material:"Gensets / Turbines", greenChannel:true,  emdExempt:true,  regExpiry:Date.now()+86400000*500, status:"Active" },
+    { id:"V-PUMP-06",  name:"Flowserve India Controls (MSME)",   category:"MSME",  material:"Pumps & Compressors",greenChannel:false, emdExempt:true,  regExpiry:Date.now()+86400000*80,  status:"Active" },
   ]);
 
-  // SAP-MM: ROMIS seeds
   DB.set(KEYS.MATERIALS, [
     { id:crypto.randomUUID(), material:"Steel Plate (Grade DH36)", heatNo:"HT-25-019", qty:24, project:"P17A", location:"SY-B2-R4",  createdAt:Date.now()-3600000*6 },
     { id:crypto.randomUUID(), material:"High-Pressure Alloy Pipe", heatNo:"PP-25-007", qty:60, project:"P75",  location:"SUB-C3-L2", createdAt:Date.now()-3600000*2 },
   ]);
 
-  // SAP-EHS: Incident seeds
   DB.set(KEYS.HSE, [
-    { id:crypto.randomUUID(), logType:"near-miss", shift:"A-East",  description:"Unsecured toolbox near Dock-2 upper gantry. No injury. PPE compliant. Corrected immediately.", personnel:"CTR-1922", hours:"",   severity:"MED",  createdAt:Date.now()-3600000*8 },
-    { id:crypto.randomUUID(), logType:"subcon",    shift:"B-East",  description:"Erection sub-assembly P17A frame-72. All PPE compliant. ROMIS material issue coordinated.",   personnel:"CTR-2841", hours:32,   severity:"LOW",  createdAt:Date.now()-3600000*3 },
-    { id:crypto.randomUUID(), logType:"toolbox",   shift:"A-Sub",   description:"Daily toolbox talk: confined space entry procedure for submarine ballast tank access.",         personnel:"SUP-0441", hours:"",   severity:"LOW",  createdAt:Date.now()-3600000*1 },
+    { id:crypto.randomUUID(), logType:"near-miss", shift:"A-East", description:"Unsecured toolbox near Dock-2 upper gantry. No injury. PPE compliant.", personnel:"CTR-1922", hours:"",  severity:"MED", createdAt:Date.now()-3600000*8 },
+    { id:crypto.randomUUID(), logType:"subcon",    shift:"B-East", description:"Erection sub-assembly P17A frame-72. All PPE compliant. ROMIS coordinated.", personnel:"CTR-2841", hours:32, severity:"LOW", createdAt:Date.now()-3600000*3 },
+    { id:crypto.randomUUID(), logType:"toolbox",   shift:"A-Sub",  description:"Daily toolbox talk: confined space entry for submarine ballast tank access.", personnel:"SUP-0441", hours:"",  severity:"LOW", createdAt:Date.now()-3600000*1 },
   ]);
 
   localStorage.setItem(KEYS.INIT, "1");
@@ -405,377 +482,614 @@ function bootstrapMockData() {
 // ─── Clock ──────────────────────────────────────────────────────────
 function startClock() {
   function tick() {
-    const now = new Date();
-    document.getElementById("clockDate").textContent = now.toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
-    document.getElementById("clockTime").textContent = now.toLocaleTimeString("en-IN",{hour12:false});
+    var now = new Date();
+    var dateEl = document.getElementById("clockDate");
+    var timeEl = document.getElementById("clockTime");
+    if (dateEl) dateEl.textContent = now.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short", year:"numeric" });
+    if (timeEl) timeEl.textContent = now.toLocaleTimeString("en-IN", { hour12:false });
   }
-  tick(); setInterval(tick, 1000);
+  tick();
+  setInterval(tick, 1000);
 }
 
 function stampRefresh() {
-  const el = document.getElementById("lastRefresh");
-  if (el) el.textContent = "Refreshed: " + new Date().toLocaleTimeString("en-IN",{hour12:false});
+  var el = document.getElementById("lastRefresh");
+  if (el) el.textContent = "Refreshed: " + new Date().toLocaleTimeString("en-IN", { hour12:false });
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // NAVIGATION
 // ═══════════════════════════════════════════════════════════════════
-const VIEW_META = {
-  ess:        { bc:"Financial Command › Executive Overview",        onEnter: renderESS        },
-  projects:   { bc:"Project &amp; Spatial MIS › Portfolio View",   onEnter: renderProjects   },
-  supply:     { bc:"Supply Chain &amp; Vendors › ROMIS Module",    onEnter: renderSupply     },
-  hcm:        { bc:"Human Capital &amp; HSE › Incident Register",  onEnter: renderHCM        },
-  compliance: { bc:"Indigenization &amp; CSR › Compliance Ctr.",   onEnter: ()=>{}           },
-  audit:      { bc:"Security › RBAC Audit Log",                    onEnter: renderAuditGrid  },
+var VIEW_META = {
+  ess:        { bc:["Financial Command","Executive Overview"],       onEnter: renderESS       },
+  projects:   { bc:["Project & Spatial MIS","Portfolio View"],      onEnter: renderProjects  },
+  supply:     { bc:["Supply Chain & Vendors","ROMIS Module"],       onEnter: renderSupply    },
+  hcm:        { bc:["Human Capital & HSE","Incident Register"],     onEnter: renderHCM       },
+  compliance: { bc:["Indigenization & CSR","Compliance Centre"],    onEnter: function(){}    },
+  audit:      { bc:["Security","RBAC Audit Log"],                   onEnter: renderAuditGrid },
 };
 
-let currentView = null;
+var currentView = null;
 
 function setActiveView(viewKey) {
-  // RBAC guard: if role doesn't have permission, silently redirect
-  if (activeRole && !activeRole.permissions.includes(viewKey)) {
-    const fallback = activeRole.permissions[0] || "audit";
+  // RBAC guard
+  if (activeRole && activeRole.permissions.indexOf(viewKey) === -1) {
+    var fallback = activeRole.permissions[0] || "audit";
     setActiveView(fallback);
     return;
   }
   if (currentView === viewKey) return;
   currentView = viewKey;
 
-  Object.keys(VIEW_META).forEach(k => {
-    const el = document.getElementById("view-"+k);
-    if (el) el.classList.toggle("hidden", k !== viewKey);
+  Object.keys(VIEW_META).forEach(function(k) {
+    var el = document.getElementById("view-" + k);
+    if (el) {
+      if (k === viewKey) {
+        el.classList.remove("hidden");
+      } else {
+        el.classList.add("hidden");
+      }
+    }
   });
 
-  document.querySelectorAll(".sidebar-item").forEach(el => {
+  // Sidebar active state
+  var items = document.querySelectorAll(".sidebar-item");
+  items.forEach(function(el) {
     el.classList.toggle("active", el.dataset.view === viewKey);
   });
 
-  const bc = document.getElementById("breadcrumb");
+  // Breadcrumb
+  var bc = document.getElementById("breadcrumb");
   if (bc && VIEW_META[viewKey]) {
-    const parts = VIEW_META[viewKey].bc.split(" › ");
-    bc.innerHTML = `<span>MDL HQ</span><i class="fas fa-angle-right"></i>` +
-      parts.map((p,i)=>i<parts.length-1?`<span>${p}</span><i class="fas fa-angle-right"></i>`:`<span>${p}</span>`).join("");
+    var parts = VIEW_META[viewKey].bc;
+    var html = '<span>MDL HQ</span><i class="fas fa-angle-right"></i>';
+    parts.forEach(function(p, i) {
+      html += '<span>' + p + '</span>';
+      if (i < parts.length - 1) html += '<i class="fas fa-angle-right"></i>';
+    });
+    bc.innerHTML = html;
   }
 
-  if (VIEW_META[viewKey]?.onEnter) VIEW_META[viewKey].onEnter();
+  if (VIEW_META[viewKey] && VIEW_META[viewKey].onEnter) {
+    VIEW_META[viewKey].onEnter();
+  }
   stampRefresh();
 }
 
+var navWired = false;
 function wireNavigation() {
-  const toggle  = document.getElementById("sidebarToggle");
-  const sidebar = document.getElementById("sidebar");
+  if (navWired) return;
+  navWired = true;
+
+  var toggle  = document.getElementById("sidebarToggle");
+  var sidebar = document.getElementById("sidebar");
   if (toggle && sidebar) {
-    toggle.addEventListener("click", () => {
-      if (window.innerWidth < 900) sidebar.classList.toggle("mobile-open");
-      else sidebar.classList.toggle("collapsed");
+    toggle.addEventListener("click", function() {
+      if (window.innerWidth < 900) {
+        sidebar.classList.toggle("mobile-open");
+      } else {
+        sidebar.classList.toggle("collapsed");
+      }
     });
   }
-  document.getElementById("refreshBtn")?.addEventListener("click", () => {
-    const btn = document.getElementById("refreshBtn");
-    btn.classList.add("spinning");
-    setTimeout(() => {
-      btn.classList.remove("spinning");
-      if (currentView && VIEW_META[currentView]?.onEnter) VIEW_META[currentView].onEnter();
-      stampRefresh();
-    }, 600);
-  });
+
+  var refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", function() {
+      refreshBtn.classList.add("spinning");
+      setTimeout(function() {
+        refreshBtn.classList.remove("spinning");
+        if (currentView && VIEW_META[currentView] && VIEW_META[currentView].onEnter) {
+          VIEW_META[currentView].onEnter();
+        }
+        stampRefresh();
+      }, 600);
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // ESS — Financial Command (SAP-FI/CO + SAP-BW)
 // ═══════════════════════════════════════════════════════════════════
-let chartRevenue=null, chartIndi=null;
+var chartRevenue = null;
+var chartIndi    = null;
 
 function renderESS() {
-  const data = DB.get(KEYS.STRATEGIC, null);
+  var data = DB.get(KEYS.STRATEGIC, null);
   if (!data) return;
+
   Chart.defaults.color       = "#8a94a6";
   Chart.defaults.borderColor = "rgba(255,255,255,0.05)";
   Chart.defaults.font.family = "'IBM Plex Mono', monospace";
   Chart.defaults.font.size   = 10;
 
-  const revCtx = document.getElementById("revenueChart");
+  var revCtx = document.getElementById("revenueChart");
   if (revCtx) {
     if (chartRevenue) chartRevenue.destroy();
     chartRevenue = new Chart(revCtx, {
       data: {
         labels: ["FY21","FY22","FY23","FY24","FY25"],
         datasets: [
-          { type:"bar",  label:"Revenue (₹ Cr)", yAxisID:"yRev", order:2, data:[data.revenue.fy21,data.revenue.fy22,data.revenue.fy23,data.revenue.fy24,data.revenue.fy25], backgroundColor:"rgba(32,117,255,0.50)", borderColor:"#2075ff", borderWidth:1 },
-          { type:"line", label:"PAT (₹ Cr)",     yAxisID:"yPat", order:1, data:[data.pat.fy21,data.pat.fy22,data.pat.fy23,data.pat.fy24,data.pat.fy25], borderColor:"#00e5a0", backgroundColor:"rgba(0,229,160,0.07)", pointBackgroundColor:"#00e5a0", pointRadius:4, pointHoverRadius:6, borderWidth:2, fill:true, tension:0.35 },
+          {
+            type:"bar", label:"Revenue (₹ Cr)", yAxisID:"yRev", order:2,
+            data:[data.revenue.fy21, data.revenue.fy22, data.revenue.fy23, data.revenue.fy24, data.revenue.fy25],
+            backgroundColor:"rgba(32,117,255,0.50)", borderColor:"#2075ff", borderWidth:1,
+          },
+          {
+            type:"line", label:"PAT (₹ Cr)", yAxisID:"yPat", order:1,
+            data:[data.pat.fy21, data.pat.fy22, data.pat.fy23, data.pat.fy24, data.pat.fy25],
+            borderColor:"#00e5a0", backgroundColor:"rgba(0,229,160,0.07)",
+            pointBackgroundColor:"#00e5a0", pointRadius:4, pointHoverRadius:6,
+            borderWidth:2, fill:true, tension:0.35,
+          },
         ],
       },
       options: {
-        responsive:true, maintainAspectRatio:true, interaction:{mode:"index",intersect:false},
+        responsive:true, maintainAspectRatio:true,
+        interaction:{ mode:"index", intersect:false },
         plugins: {
           legend:{ position:"top", align:"end", labels:{ boxWidth:10, padding:14, font:{size:10} } },
-          tooltip:{ backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1, padding:10, callbacks:{ label:ctx=>` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString("en-IN")} Cr` } },
+          tooltip:{
+            backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1, padding:10,
+            callbacks:{ label: function(ctx) { return " " + ctx.dataset.label + ": ₹" + ctx.parsed.y.toLocaleString("en-IN") + " Cr"; } },
+          },
         },
         scales: {
-          yRev:{ type:"linear", position:"left",  grid:{ color:"rgba(255,255,255,0.04)" }, ticks:{ callback:v=>"₹"+(v/1000).toFixed(0)+"k" } },
-          yPat:{ type:"linear", position:"right", grid:{ drawOnChartArea:false },          ticks:{ callback:v=>"₹"+v } },
+          yRev:{ type:"linear", position:"left",  grid:{ color:"rgba(255,255,255,0.04)" }, ticks:{ callback: function(v) { return "₹" + (v/1000).toFixed(0) + "k"; } } },
+          yPat:{ type:"linear", position:"right", grid:{ drawOnChartArea:false },          ticks:{ callback: function(v) { return "₹" + v; } } },
           x:   { grid:{ color:"rgba(255,255,255,0.04)" } },
         },
       },
     });
   }
 
-  const indiCtx = document.getElementById("indiChart");
+  var indiCtx = document.getElementById("indiChart");
   if (indiCtx) {
     if (chartIndi) chartIndi.destroy();
     chartIndi = new Chart(indiCtx, {
       type:"doughnut",
-      data:{ labels:["Make in India","Imports"], datasets:[{ data:[data.indigenization.domestic,data.indigenization.imports], backgroundColor:["#2075ff","#2d3a55"], borderColor:["#2075ff","#3a4560"], borderWidth:2, hoverOffset:6 }] },
-      options:{ responsive:true, cutout:"65%", plugins:{ legend:{display:false}, tooltip:{ backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1, callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed}%`} } } },
+      data:{
+        labels:["Make in India","Imports"],
+        datasets:[{
+          data:[data.indigenization.domestic, data.indigenization.imports],
+          backgroundColor:["#2075ff","#2d3a55"],
+          borderColor:["#2075ff","#3a4560"],
+          borderWidth:2, hoverOffset:6,
+        }],
+      },
+      options:{
+        responsive:true, cutout:"65%",
+        plugins:{
+          legend:{ display:false },
+          tooltip:{
+            backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1,
+            callbacks:{ label: function(ctx) { return " " + ctx.label + ": " + ctx.parsed + "%"; } },
+          },
+        },
+      },
     });
   }
 
-  logAudit("VIEW_ACCESS", "Financial Command (ESS) · Read");
+  logAudit("VIEW_ACCESS", "Financial Command (ESS)");
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // PROJECTS — SAP-PS
 // ═══════════════════════════════════════════════════════════════════
-let projectsGrid=null;
+var projectsGridInst = null;
 
 function spiTag(spi) {
-  if (spi>=1.0) return `<span class="cell-positive">▲ ${spi.toFixed(2)}</span>`;
-  if (spi>=0.9) return `<span class="cell-neutral">◆ ${spi.toFixed(2)}</span>`;
-  return `<span class="cell-negative">▼ ${spi.toFixed(2)}</span>`;
+  if (spi >= 1.0) return '<span class="cell-positive">&#9650; ' + spi.toFixed(2) + '</span>';
+  if (spi >= 0.9) return '<span class="cell-neutral">&#9670; '  + spi.toFixed(2) + '</span>';
+  return '<span class="cell-negative">&#9660; ' + spi.toFixed(2) + '</span>';
 }
 
 function statusTag(s) {
-  const m={"On Track":"tag-on-track","Slight Overrun":"tag-overrun","Managed Overrun":"tag-managed","Underrun":"tag-underrun","On Hold":"tag-hold"};
-  return `<span class="cell-tag ${m[s]||"tag-hold"}">${s.toUpperCase()}</span>`;
+  var map = {
+    "On Track":       "tag-on-track",
+    "Slight Overrun": "tag-overrun",
+    "Managed Overrun":"tag-managed",
+    "Underrun":       "tag-underrun",
+    "On Hold":        "tag-hold",
+  };
+  var cls = map[s] || "tag-hold";
+  return '<span class="cell-tag ' + cls + '">' + s.toUpperCase() + '</span>';
 }
 
 function renderProjects() {
-  const container = document.getElementById("projectsGrid");
+  var container = document.getElementById("projectsGrid");
   if (!container) return;
-  const data = DB.get(KEYS.PROJECTS,[]);
-  const rows = data.map(p=>[
-    p.id,
-    p.description,
-    "₹"+p.contractValue.toLocaleString("en-IN")+" Cr",
-    "₹"+p.remaining.toLocaleString("en-IN")+" Cr",
-    (((p.contractValue-p.remaining)/p.contractValue)*100).toFixed(1)+"%",
-    gridjs.html(spiTag(p.spi)),
-    (p.indigenization||"—")+"%",
-    gridjs.html(statusTag(p.status)),
-  ]);
-  const cfg = {
-    columns:[{name:"WBS ID",width:"75px"},{name:"Programme",width:"260px"},{name:"Contracted",width:"120px"},{name:"Remaining",width:"110px"},{name:"% Done",width:"80px"},{name:"SPI",width:"75px"},{name:"Indi. %",width:"70px"},{name:"Status",width:"140px"}],
-    data:rows, sort:true, search:{enabled:true}, pagination:{enabled:true,limit:6},
+  var data = DB.get(KEYS.PROJECTS, []);
+
+  var rows = data.map(function(p) {
+    var pctDone = p.contractValue > 0
+      ? (((p.contractValue - p.remaining) / p.contractValue) * 100).toFixed(1)
+      : "0.0";
+    return [
+      p.id,
+      p.description,
+      "₹" + p.contractValue.toLocaleString("en-IN") + " Cr",
+      "₹" + p.remaining.toLocaleString("en-IN") + " Cr",
+      pctDone + "%",
+      gridjs.html(spiTag(p.spi)),
+      (p.indigenization || "—") + "%",
+      gridjs.html(statusTag(p.status)),
+    ];
+  });
+
+  var cfg = {
+    columns:[
+      { name:"WBS ID",     width:"75px"  },
+      { name:"Programme",  width:"255px" },
+      { name:"Contracted", width:"120px" },
+      { name:"Remaining",  width:"110px" },
+      { name:"% Done",     width:"75px"  },
+      { name:"SPI",        width:"75px"  },
+      { name:"Indi. %",    width:"65px"  },
+      { name:"Status",     width:"140px" },
+    ],
+    data:rows, sort:true, search:{ enabled:true }, pagination:{ enabled:true, limit:6 },
   };
-  if (!projectsGrid) { projectsGrid=new gridjs.Grid(cfg); projectsGrid.render(container); }
-  else projectsGrid.updateConfig(cfg).forceRender();
-  document.getElementById("projCount").textContent = data.length+" ACTIVE PROGRAMMES";
-  logAudit("VIEW_ACCESS","Project Portfolio (SAP-PS) · Read");
+
+  if (!projectsGridInst) {
+    projectsGridInst = new gridjs.Grid(cfg);
+    projectsGridInst.render(container);
+  } else {
+    projectsGridInst.updateConfig(cfg).forceRender();
+  }
+
+  var badge = document.getElementById("projCount");
+  if (badge) badge.textContent = data.length + " ACTIVE PROGRAMMES";
+  logAudit("VIEW_ACCESS", "Project Portfolio (SAP-PS)");
 }
 
+// ─── Add Project Modal ──────────────────────────────────────────────
+var projModalWired = false;
 function wireProjectModal() {
-  const modal=document.getElementById("addProjectModal");
-  const openBtn=document.getElementById("openAddProjectModal");
-  const closeBtn=document.getElementById("closeProjectModal");
-  const cancelBtn=document.getElementById("cancelProjectModal");
-  const saveBtn=document.getElementById("saveProjectBtn");
-  const msg=document.getElementById("projModalMsg");
+  if (projModalWired) return;
+  projModalWired = true;
+
+  var modal     = document.getElementById("addProjectModal");
+  var openBtn   = document.getElementById("openAddProjectModal");
+  var closeBtn  = document.getElementById("closeProjectModal");
+  var cancelBtn = document.getElementById("cancelProjectModal");
+  var saveBtn   = document.getElementById("saveProjectBtn");
+  var msg       = document.getElementById("projModalMsg");
   if (!modal) return;
-  function close() { modal.classList.add("hidden"); msg.classList.add("hidden"); ["mProjId","mProjDesc","mProjValue","mProjBalance","mProjSpi","mProjIndi"].forEach(id=>{const el=document.getElementById(id);if(el)el.value=""}); }
-  openBtn?.addEventListener("click",()=>modal.classList.remove("hidden"));
-  closeBtn?.addEventListener("click",close);
-  cancelBtn?.addEventListener("click",close);
-  modal.addEventListener("click",e=>{if(e.target===modal)close();});
-  saveBtn?.addEventListener("click",()=>{
-    const id=document.getElementById("mProjId")?.value.trim();
-    const desc=document.getElementById("mProjDesc")?.value.trim();
-    const val=parseFloat(document.getElementById("mProjValue")?.value);
-    const bal=parseFloat(document.getElementById("mProjBalance")?.value);
-    const spi=parseFloat(document.getElementById("mProjSpi")?.value||"1.00");
-    const indi=parseInt(document.getElementById("mProjIndi")?.value||"0");
-    const status=document.getElementById("mProjStatus")?.value;
-    if (!id||!desc||isNaN(val)||isNaN(bal)) return;
-    const projects=DB.get(KEYS.PROJECTS,[]);
-    projects.push({id,description:desc,contractValue:val,remaining:bal,spi,indigenization:indi,status,createdAt:Date.now()});
-    DB.set(KEYS.PROJECTS,projects);
-    renderProjects();
-    logAudit("DATA_CREATE",`New WBS: ${id} · ${desc} · ₹${val} Cr`);
-    msg.classList.remove("hidden");
-    setTimeout(()=>{msg.classList.add("hidden");close();},1500);
-  });
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    if (msg) msg.classList.add("hidden");
+    ["mProjId","mProjDesc","mProjValue","mProjBalance","mProjSpi","mProjIndi"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+  }
+
+  if (openBtn)   openBtn.addEventListener("click", function() { modal.classList.remove("hidden"); });
+  if (closeBtn)  closeBtn.addEventListener("click", closeModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+  modal.addEventListener("click", function(e) { if (e.target === modal) closeModal(); });
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", function() {
+      var id    = (document.getElementById("mProjId")?.value || "").trim();
+      var desc  = (document.getElementById("mProjDesc")?.value || "").trim();
+      var val   = parseFloat(document.getElementById("mProjValue")?.value || "");
+      var bal   = parseFloat(document.getElementById("mProjBalance")?.value || "");
+      var spi   = parseFloat(document.getElementById("mProjSpi")?.value || "1.00");
+      var indi  = parseInt(document.getElementById("mProjIndi")?.value || "0", 10);
+      var status= document.getElementById("mProjStatus")?.value || "On Track";
+      if (!id || !desc || isNaN(val) || isNaN(bal)) return;
+
+      var projects = DB.get(KEYS.PROJECTS, []);
+      projects.push({ id:id, description:desc, contractValue:val, remaining:bal, spi:spi, indigenization:indi, status:status, createdAt:Date.now() });
+      DB.set(KEYS.PROJECTS, projects);
+      renderProjects();
+      logAudit("DATA_CREATE", "New WBS: " + id + " · " + desc + " · ₹" + val + " Cr");
+      if (msg) msg.classList.remove("hidden");
+      setTimeout(function() { if (msg) msg.classList.add("hidden"); closeModal(); }, 1500);
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPPLY — SAP-MM
 // ═══════════════════════════════════════════════════════════════════
-let inventoryGrid=null, vendorGrid=null, materialsGrid=null;
+var inventoryGridInst = null;
+var vendorGridInst    = null;
+var materialsGridInst = null;
 
 function renderSupply() {
-  const inventory=DB.get(KEYS.INVENTORY,[]);
-  const vendors=DB.get(KEYS.VENDORS,[]);
-  const materials=DB.get(KEYS.MATERIALS,[]);
-  const low=inventory.filter(i=>i.status==="LOW").length;
-  const exp=vendors.filter(v=>(v.regExpiry-Date.now())<86400000*90).length;
-  document.getElementById("kpi-vendors").textContent=vendors.length;
-  document.getElementById("kpi-mat-count").textContent=materials.length;
-  document.getElementById("kpi-reorders").textContent=low;
-  document.getElementById("kpi-expiring").textContent=exp;
+  var inventory = DB.get(KEYS.INVENTORY, []);
+  var vendors   = DB.get(KEYS.VENDORS, []);
+  var materials = DB.get(KEYS.MATERIALS, []);
+  var low = inventory.filter(function(i) { return i.status === "LOW"; }).length;
+  var exp = vendors.filter(function(v) { return (v.regExpiry - Date.now()) < 86400000 * 90; }).length;
 
-  const invC=document.getElementById("inventoryGrid");
+  var kv = document.getElementById("kpi-vendors");
+  var km = document.getElementById("kpi-mat-count");
+  var kr = document.getElementById("kpi-reorders");
+  var ke = document.getElementById("kpi-expiring");
+  if (kv) kv.textContent = vendors.length;
+  if (km) km.textContent = materials.length;
+  if (kr) kr.textContent = low;
+  if (ke) ke.textContent = exp;
+
+  // Inventory grid
+  var invC = document.getElementById("inventoryGrid");
   if (invC) {
-    const r=inventory.map(i=>[i.code,i.description,gridjs.html(i.status==="LOW"?`<span class="stock-low">⚠ ${i.stock} ${i.unit}</span>`:`${i.stock} ${i.unit}`),i.minThreshold+" "+i.unit,"₹"+i.unitPrice.toLocaleString("en-IN"),i.vendorId]);
-    const c={columns:[{name:"Item Code",width:"110px"},{name:"Description",width:"220px"},{name:"Stock",width:"90px"},{name:"Min Threshold",width:"110px"},{name:"Unit Price",width:"100px"},{name:"Vendor",width:"100px"}],data:r,sort:true,pagination:{enabled:true,limit:5}};
-    if(!inventoryGrid){inventoryGrid=new gridjs.Grid(c);inventoryGrid.render(invC);}else inventoryGrid.updateConfig(c).forceRender();
+    var invRows = inventory.map(function(i) {
+      var stockHtml = i.status === "LOW"
+        ? '<span class="stock-low">&#9888; ' + i.stock + " " + i.unit + "</span>"
+        : i.stock + " " + i.unit;
+      return [i.code, i.description, gridjs.html(stockHtml), i.minThreshold + " " + i.unit, "₹" + i.unitPrice.toLocaleString("en-IN"), i.vendorId];
+    });
+    var invCfg = {
+      columns:[{name:"Item Code",width:"110px"},{name:"Description",width:"220px"},{name:"Stock",width:"90px"},{name:"Min Threshold",width:"110px"},{name:"Unit Price",width:"100px"},{name:"Vendor",width:"100px"}],
+      data:invRows, sort:true, pagination:{ enabled:true, limit:5 },
+    };
+    if (!inventoryGridInst) { inventoryGridInst = new gridjs.Grid(invCfg); inventoryGridInst.render(invC); }
+    else inventoryGridInst.updateConfig(invCfg).forceRender();
   }
 
-  const vC=document.getElementById("vendorGrid");
+  // Vendor grid
+  var vC = document.getElementById("vendorGrid");
   if (vC) {
-    const r=vendors.map(v=>{const d=Math.ceil((v.regExpiry-Date.now())/86400000);return[v.id,v.name,v.category,v.material,gridjs.html(v.greenChannel?`<span class="green-channel">✔ GREEN</span>`:"—"),gridjs.html(v.emdExempt?`<span class="emd-exempt">✔ EXEMPT</span>`:"—"),gridjs.html(d<90?`<span class="cell-negative">⚠ ${d}d</span>`:`<span>${d}d</span>`)];});
-    const c={columns:[{name:"ID",width:"90px"},{name:"Name",width:"190px"},{name:"Category",width:"70px"},{name:"Material",width:"140px"},{name:"Green Ch.",width:"80px"},{name:"EMD",width:"80px"},{name:"Expiry",width:"80px"}],data:r,sort:true,pagination:{enabled:true,limit:4}};
-    if(!vendorGrid){vendorGrid=new gridjs.Grid(c);vendorGrid.render(vC);}else vendorGrid.updateConfig(c).forceRender();
+    var vRows = vendors.map(function(v) {
+      var daysLeft = Math.ceil((v.regExpiry - Date.now()) / 86400000);
+      var expiryHtml = daysLeft < 90
+        ? '<span class="cell-negative">&#9888; ' + daysLeft + "d</span>"
+        : daysLeft + "d";
+      var gcHtml  = v.greenChannel ? '<span class="green-channel">&#10004; GREEN</span>' : "—";
+      var emdHtml = v.emdExempt    ? '<span class="emd-exempt">&#10004; EXEMPT</span>'  : "—";
+      return [v.id, v.name, v.category, v.material, gridjs.html(gcHtml), gridjs.html(emdHtml), gridjs.html(expiryHtml)];
+    });
+    var vCfg = {
+      columns:[{name:"ID",width:"90px"},{name:"Name",width:"190px"},{name:"Category",width:"70px"},{name:"Material",width:"140px"},{name:"Green Ch.",width:"80px"},{name:"EMD",width:"80px"},{name:"Expiry",width:"80px"}],
+      data:vRows, sort:true, pagination:{ enabled:true, limit:4 },
+    };
+    if (!vendorGridInst) { vendorGridInst = new gridjs.Grid(vCfg); vendorGridInst.render(vC); }
+    else vendorGridInst.updateConfig(vCfg).forceRender();
   }
+
   renderMaterialsGrid();
-  logAudit("VIEW_ACCESS","Supply Chain & Vendors (SAP-MM) · Read");
+  logAudit("VIEW_ACCESS", "Supply Chain & Vendors (SAP-MM)");
 }
 
 function renderMaterialsGrid() {
-  const c=document.getElementById("materialsGrid");
+  var c = document.getElementById("materialsGrid");
   if (!c) return;
-  const data=DB.get(KEYS.MATERIALS,[]).sort((a,b)=>b.createdAt-a.createdAt);
-  const rows=data.map(m=>[m.material,m.heatNo,m.qty,m.project,m.location||"—",new Date(m.createdAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})]);
-  const cfg={columns:[{name:"Material",width:"180px"},{name:"Heat/Batch",width:"100px"},{name:"Qty",width:"60px"},{name:"Project",width:"90px"},{name:"Location",width:"90px"},{name:"Logged At",width:"130px"}],data:rows,sort:true,pagination:{enabled:true,limit:5}};
-  if(!materialsGrid){materialsGrid=new gridjs.Grid(cfg);materialsGrid.render(c);}else materialsGrid.updateConfig(cfg).forceRender();
-  document.getElementById("matIssueCount").textContent=data.length+" ISSUES";
+  var data = DB.get(KEYS.MATERIALS, []).sort(function(a, b) { return b.createdAt - a.createdAt; });
+  var rows = data.map(function(m) {
+    return [
+      m.material, m.heatNo, m.qty, m.project, m.location || "—",
+      new Date(m.createdAt).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
+    ];
+  });
+  var cfg = {
+    columns:[{name:"Material",width:"180px"},{name:"Heat/Batch",width:"100px"},{name:"Qty",width:"60px"},{name:"Project",width:"90px"},{name:"Location",width:"90px"},{name:"Logged At",width:"130px"}],
+    data:rows, sort:true, pagination:{ enabled:true, limit:5 },
+  };
+  if (!materialsGridInst) { materialsGridInst = new gridjs.Grid(cfg); materialsGridInst.render(c); }
+  else materialsGridInst.updateConfig(cfg).forceRender();
+  var badge = document.getElementById("matIssueCount");
+  if (badge) badge.textContent = data.length + " ISSUES";
 }
 
+var matLoggerWired = false;
 function wireMaterialLogger() {
-  document.getElementById("logMaterialBtn")?.addEventListener("click",()=>{
-    const material=document.getElementById("matType")?.value;
-    const project=document.getElementById("matProject")?.value;
-    const heatNo=document.getElementById("matHeat")?.value.trim();
-    const qty=parseFloat(document.getElementById("matQty")?.value);
-    const location=document.getElementById("matLocation")?.value.trim();
-    if (!material||!heatNo||isNaN(qty)) return;
-    const mats=DB.get(KEYS.MATERIALS,[]);
-    mats.push({id:crypto.randomUUID(),material,heatNo,qty,project,location,createdAt:Date.now()});
-    DB.set(KEYS.MATERIALS,mats);
+  if (matLoggerWired) return;
+  matLoggerWired = true;
+
+  var btn = document.getElementById("logMaterialBtn");
+  if (!btn) return;
+
+  btn.addEventListener("click", function() {
+    var material = (document.getElementById("matType")?.value || "").trim();
+    var project  = (document.getElementById("matProject")?.value || "").trim();
+    var heatNo   = (document.getElementById("matHeat")?.value || "").trim();
+    var qty      = parseFloat(document.getElementById("matQty")?.value || "");
+    var location = (document.getElementById("matLocation")?.value || "").trim();
+    if (!material || !heatNo || isNaN(qty)) return;
+
+    var mats = DB.get(KEYS.MATERIALS, []);
+    mats.push({ id:crypto.randomUUID(), material:material, heatNo:heatNo, qty:qty, project:project, location:location, createdAt:Date.now() });
+    DB.set(KEYS.MATERIALS, mats);
     renderMaterialsGrid();
-    logAudit("DATA_CREATE",`ROMIS Issue: ${material} · ${qty} units → ${project} @ ${location||"??"}`);
-    const msg=document.getElementById("matFormMsg");
-    msg.classList.remove("hidden");
-    setTimeout(()=>msg.classList.add("hidden"),2000);
-    document.getElementById("matHeat").value="";
-    document.getElementById("matQty").value="";
-    document.getElementById("matLocation").value="";
-    if(currentView==="supply") document.getElementById("kpi-mat-count").textContent=mats.length;
+    logAudit("DATA_CREATE", "ROMIS: " + material + " · " + qty + " units → " + project);
+
+    var msg = document.getElementById("matFormMsg");
+    if (msg) { msg.classList.remove("hidden"); setTimeout(function() { msg.classList.add("hidden"); }, 2000); }
+
+    var heatEl = document.getElementById("matHeat");
+    var qtyEl  = document.getElementById("matQty");
+    var locEl  = document.getElementById("matLocation");
+    if (heatEl) heatEl.value = "";
+    if (qtyEl)  qtyEl.value  = "";
+    if (locEl)  locEl.value  = "";
+
+    var badge = document.getElementById("kpi-mat-count");
+    if (badge) badge.textContent = mats.length;
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // HCM — Workforce + HSE (SAP-HCM + SAP-EHS)
 // ═══════════════════════════════════════════════════════════════════
-let leadershipGrid=null, hseGrid=null, selectedSev="LOW";
+var leadershipGridInst = null;
+var hseGridInst        = null;
+var selectedSev        = "LOW";
 
-const LEADERSHIP = [
-  {id:"CMD-01",name:"Capt. Jagmohan (Retd.)",      designation:"Chairman & Managing Director (CMD)",       access:"Global Enterprise · All Modules",clearance:"SECRET"},
-  {id:"DIR-SB",name:"Mr. Biju George",              designation:"Director (Shipbuilding)",                  access:"Production · PM · QA",           clearance:"CONFIDENTIAL"},
-  {id:"DIR-FI",name:"Mr. Ruchir Agrawal",           designation:"Director (Finance) & CFO",                access:"Financial Ledger · Audit",        clearance:"CONFIDENTIAL"},
-  {id:"DIR-SM",name:"Cmde Shailesh B Jamgaonkar",  designation:"Director (Submarine & Heavy Engineering)", access:"Submarine · IPMS · Heavy Mfg",    clearance:"SECRET"},
-  {id:"DIR-CP",name:"Cdr. Vasudev Puranik",         designation:"Director (Corporate Planning & Personnel)",access:"HR · Strategic Planning",         clearance:"RESTRICTED"},
-  {id:"GM-CIT",name:"Mr. Chandra Vijay Shrivastava",designation:"GM (F-CA) & GM (CIT)",                   access:"Financial Control · IT · MIS",    clearance:"CONFIDENTIAL"},
-  {id:"GM-FPS",name:"Mr. Saurabh Kumar Gupta",      designation:"GM (F-P&S)",                               access:"Financial Planning & Strategy",   clearance:"RESTRICTED"},
-  {id:"GM-PSO",name:"Mr. Sanjay Kumar Singh",       designation:"GM (PS-Offshore & MOD KILO)",             access:"Offshore Projects · Sub Refit",   clearance:"SECRET"},
-  {id:"GM-QSI",name:"Mr. E R Thomas",               designation:"GM (SB-QA & SI)",                         access:"Quality Assurance · ISO",         clearance:"CONFIDENTIAL"},
-  {id:"GM-INF",name:"Mr. P Dhanraj",                designation:"GM (SB-Works/NHY)",                       access:"Infrastructure · Berth & Dock",   clearance:"RESTRICTED"},
-  {id:"ED-HR", name:"Mr. Arun Kumar Chand",         designation:"Executive Director / HOD (HR)",           access:"HR Master · Payroll · Diversity",  clearance:"RESTRICTED"},
+var LEADERSHIP = [
+  { id:"CMD-01", name:"Capt. Jagmohan (Retd.)",       designation:"Chairman & Managing Director (CMD)",        access:"Global Enterprise · All Modules",  clearance:"SECRET"       },
+  { id:"DIR-SB", name:"Mr. Biju George",               designation:"Director (Shipbuilding)",                   access:"Production · PM · QA",             clearance:"CONFIDENTIAL" },
+  { id:"DIR-FI", name:"Mr. Ruchir Agrawal",            designation:"Director (Finance) & CFO",                  access:"Financial Ledger · Audit",          clearance:"CONFIDENTIAL" },
+  { id:"DIR-SM", name:"Cmde Shailesh B Jamgaonkar",   designation:"Director (Submarine & Heavy Engineering)",   access:"Submarine · IPMS · Heavy Mfg",     clearance:"SECRET"       },
+  { id:"DIR-CP", name:"Cdr. Vasudev Puranik",          designation:"Director (Corporate Planning & Personnel)",  access:"HR · Strategic Planning",           clearance:"RESTRICTED"   },
+  { id:"GM-CIT", name:"Mr. Chandra Vijay Shrivastava", designation:"GM (F-CA) & GM (CIT)",                      access:"Financial Control · IT · MIS",     clearance:"CONFIDENTIAL" },
+  { id:"GM-FPS", name:"Mr. Saurabh Kumar Gupta",       designation:"GM (F-P&S)",                                 access:"Financial Planning & Strategy",    clearance:"RESTRICTED"   },
+  { id:"GM-PSO", name:"Mr. Sanjay Kumar Singh",        designation:"GM (PS-Offshore & MOD KILO)",               access:"Offshore Projects · Sub Refit",    clearance:"SECRET"       },
+  { id:"GM-QSI", name:"Mr. E R Thomas",                designation:"GM (SB-QA & SI)",                           access:"Quality Assurance · ISO",           clearance:"CONFIDENTIAL" },
+  { id:"GM-INF", name:"Mr. P Dhanraj",                 designation:"GM (SB-Works/NHY)",                         access:"Infrastructure · Berth & Dock",    clearance:"RESTRICTED"   },
+  { id:"ED-HR",  name:"Mr. Arun Kumar Chand",          designation:"Executive Director / HOD (HR)",             access:"HR Master · Payroll · Diversity",   clearance:"RESTRICTED"   },
 ];
 
-function renderHCM() {
-  const logs=DB.get(KEYS.HSE,[]);
-  const nmCount=logs.filter(l=>l.logType==="near-miss").length;
-  const totalHrs=logs.reduce((s,l)=>s+(parseFloat(l.hours)||0),0);
-  document.getElementById("kpi-near-miss").textContent=nmCount;
-  document.getElementById("kpi-subcon-hrs").textContent=totalHrs.toLocaleString("en-IN");
-  document.getElementById("hseEntryCount").textContent=logs.length+" ENTRIES";
+function clearanceCellHtml(clearance) {
+  var classMap = { SECRET:"cell-negative", CONFIDENTIAL:"cell-neutral", RESTRICTED:"cell-positive" };
+  var cls = classMap[clearance] || "";
+  return '<span class="' + cls + '">' + clearance + '</span>';
+}
 
-  const lC=document.getElementById("leadershipGrid");
+function renderHCM() {
+  var logs = DB.get(KEYS.HSE, []);
+  var nmCount   = logs.filter(function(l) { return l.logType === "near-miss"; }).length;
+  var totalHrs  = logs.reduce(function(s, l) { return s + (parseFloat(l.hours) || 0); }, 0);
+
+  var nmEl   = document.getElementById("kpi-near-miss");
+  var hrsEl  = document.getElementById("kpi-subcon-hrs");
+  var cntEl  = document.getElementById("hseEntryCount");
+  if (nmEl)  nmEl.textContent  = nmCount;
+  if (hrsEl) hrsEl.textContent = totalHrs.toLocaleString("en-IN");
+  if (cntEl) cntEl.textContent = logs.length + " ENTRIES";
+
+  // Leadership grid
+  var lC = document.getElementById("leadershipGrid");
   if (lC) {
-    const r=LEADERSHIP.map(p=>[p.id,p.name,p.designation,p.access,gridjs.html(()=>{const m={SECRET:"cell-negative",CONFIDENTIAL:"cell-neutral",RESTRICTED:"cell-positive"};return`<span class="${m[p.clearance]||""}">${p.clearance}</span>`}())]);
-    const c={columns:[{name:"Employee ID",width:"80px"},{name:"Name",width:"180px"},{name:"Designation",width:"240px"},{name:"MIS Access (RBAC)",width:"230px"},{name:"Clearance",width:"100px"}],data:r,sort:true,pagination:{enabled:true,limit:6}};
-    if(!leadershipGrid){leadershipGrid=new gridjs.Grid(c);leadershipGrid.render(lC);}else leadershipGrid.updateConfig(c).forceRender();
+    var lRows = LEADERSHIP.map(function(p) {
+      return [p.id, p.name, p.designation, p.access, gridjs.html(clearanceCellHtml(p.clearance))];
+    });
+    var lCfg = {
+      columns:[{name:"Employee ID",width:"80px"},{name:"Name",width:"180px"},{name:"Designation",width:"240px"},{name:"MIS Access (RBAC)",width:"230px"},{name:"Clearance",width:"100px"}],
+      data:lRows, sort:true, pagination:{ enabled:true, limit:6 },
+    };
+    if (!leadershipGridInst) { leadershipGridInst = new gridjs.Grid(lCfg); leadershipGridInst.render(lC); }
+    else leadershipGridInst.updateConfig(lCfg).forceRender();
   }
+
   renderHSEGrid();
-  logAudit("VIEW_ACCESS","Human Capital & HSE (SAP-HCM) · Read");
+  logAudit("VIEW_ACCESS", "Human Capital & HSE (SAP-HCM)");
 }
 
 function renderHSEGrid() {
-  const c=document.getElementById("hseGrid");
+  var c = document.getElementById("hseGrid");
   if (!c) return;
-  const typeMap={"near-miss":"Near-Miss","subcon":"Sub-Con Hrs","hazard":"Hazard Obs.","toolbox":"Toolbox Talk","permit":"Permit-WTW"};
-  const logs=DB.get(KEYS.HSE,[]).sort((a,b)=>b.createdAt-a.createdAt);
-  const rows=logs.map(l=>[typeMap[l.logType]||l.logType,l.shift,l.description.length>55?l.description.substring(0,55)+"…":l.description,l.personnel||"—",l.hours?l.hours+" hrs":"—",gridjs.html(`<span class="sev-tag ${l.severity}">${l.severity}</span>`),new Date(l.createdAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})]);
-  const cfg={columns:[{name:"Type",width:"90px"},{name:"Zone",width:"100px"},{name:"Activity",width:"240px"},{name:"Personnel",width:"85px"},{name:"Hours",width:"70px"},{name:"Severity",width:"80px"},{name:"Logged At",width:"120px"}],data:rows,sort:true,pagination:{enabled:true,limit:5}};
-  if(!hseGrid){hseGrid=new gridjs.Grid(cfg);hseGrid.render(c);}else hseGrid.updateConfig(cfg).forceRender();
+  var typeMap = { "near-miss":"Near-Miss", "subcon":"Sub-Con Hrs", "hazard":"Hazard Obs.", "toolbox":"Toolbox Talk", "permit":"Permit-WTW" };
+  var logs = DB.get(KEYS.HSE, []).sort(function(a, b) { return b.createdAt - a.createdAt; });
+  var rows = logs.map(function(l) {
+    var desc = l.description.length > 55 ? l.description.substring(0, 55) + "…" : l.description;
+    var sevHtml = '<span class="sev-tag ' + l.severity + '">' + l.severity + '</span>';
+    return [
+      typeMap[l.logType] || l.logType,
+      l.shift,
+      desc,
+      l.personnel || "—",
+      l.hours ? l.hours + " hrs" : "—",
+      gridjs.html(sevHtml),
+      new Date(l.createdAt).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
+    ];
+  });
+  var cfg = {
+    columns:[{name:"Type",width:"90px"},{name:"Zone",width:"100px"},{name:"Activity",width:"240px"},{name:"Personnel",width:"85px"},{name:"Hours",width:"70px"},{name:"Severity",width:"80px"},{name:"Logged At",width:"120px"}],
+    data:rows, sort:true, pagination:{ enabled:true, limit:5 },
+  };
+  if (!hseGridInst) { hseGridInst = new gridjs.Grid(cfg); hseGridInst.render(c); }
+  else hseGridInst.updateConfig(cfg).forceRender();
 }
 
+var sevWired = false;
 function wireSeveritySelector() {
-  document.querySelectorAll(".sev-btn").forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      document.querySelectorAll(".sev-btn").forEach(b=>b.classList.remove("active"));
+  if (sevWired) return;
+  sevWired = true;
+  var btns = document.querySelectorAll(".sev-btn");
+  btns.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      btns.forEach(function(b) { b.classList.remove("active"); });
       btn.classList.add("active");
-      selectedSev=btn.dataset.sev;
+      selectedSev = btn.dataset.sev;
     });
   });
 }
 
+var hseWired = false;
 function wireHSEForm() {
-  document.getElementById("logHseBtn")?.addEventListener("click",()=>{
-    const logType=document.getElementById("hseLogType")?.value;
-    const shift=document.getElementById("hseShift")?.value;
-    const description=document.getElementById("hseDescription")?.value.trim();
-    const personnel=document.getElementById("hsePersonnel")?.value.trim();
-    const hours=parseFloat(document.getElementById("hseHours")?.value)||null;
-    if (!description){document.getElementById("hseDescription")?.focus();return;}
-    const logs=DB.get(KEYS.HSE,[]);
-    logs.push({id:crypto.randomUUID(),logType,shift,description,personnel:personnel||"",hours:hours||"",severity:selectedSev,createdAt:Date.now()});
-    DB.set(KEYS.HSE,logs);
+  if (hseWired) return;
+  hseWired = true;
+
+  var btn = document.getElementById("logHseBtn");
+  if (!btn) return;
+
+  btn.addEventListener("click", function() {
+    var logType     = document.getElementById("hseLogType")?.value || "near-miss";
+    var shift       = document.getElementById("hseShift")?.value   || "A-East";
+    var description = (document.getElementById("hseDescription")?.value || "").trim();
+    var personnel   = (document.getElementById("hsePersonnel")?.value || "").trim();
+    var hours       = parseFloat(document.getElementById("hseHours")?.value || "") || null;
+
+    if (!description) {
+      var descEl = document.getElementById("hseDescription");
+      if (descEl) descEl.focus();
+      return;
+    }
+
+    var logs = DB.get(KEYS.HSE, []);
+    logs.push({
+      id:          crypto.randomUUID(),
+      logType:     logType,
+      shift:       shift,
+      description: description,
+      personnel:   personnel || "",
+      hours:       hours || "",
+      severity:    selectedSev,
+      createdAt:   Date.now(),
+    });
+    DB.set(KEYS.HSE, logs);
     renderHCM();
-    logAudit("DATA_CREATE",`HSE Log: ${logType} · ${shift} · Severity: ${selectedSev}`);
-    const msg=document.getElementById("hseFormMsg");
-    msg.classList.remove("hidden");
-    setTimeout(()=>msg.classList.add("hidden"),2000);
-    document.getElementById("hseDescription").value="";
-    document.getElementById("hsePersonnel").value="";
-    document.getElementById("hseHours").value="";
+    logAudit("DATA_CREATE", "HSE Log: " + logType + " · " + shift + " · Severity: " + selectedSev);
+
+    var msg = document.getElementById("hseFormMsg");
+    if (msg) { msg.classList.remove("hidden"); setTimeout(function() { msg.classList.add("hidden"); }, 2000); }
+
+    var descEl2 = document.getElementById("hseDescription");
+    var persEl  = document.getElementById("hsePersonnel");
+    var hrsEl   = document.getElementById("hseHours");
+    if (descEl2) descEl2.value = "";
+    if (persEl)  persEl.value  = "";
+    if (hrsEl)   hrsEl.value   = "";
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // AUDIT LOG
 // ═══════════════════════════════════════════════════════════════════
-let auditGrid=null;
+var auditGridInst = null;
 
 function renderAuditGrid() {
-  const c=document.getElementById("auditGrid");
+  var c = document.getElementById("auditGrid");
   if (!c) return;
-  const logs=DB.get(KEYS.AUDIT,[]);
-  const rows=logs.map(l=>[
-    new Date(l.ts).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"}),
-    l.userId,
-    l.role,
-    gridjs.html(()=>{const m={SECRET:"cell-negative",CONFIDENTIAL:"cell-neutral",RESTRICTED:"cell-positive"};return`<span class="${m[l.clearance]||""}">${l.clearance}</span>`}()),
-    l.action,
-    l.detail,
-  ]);
-  const cfg={columns:[{name:"Timestamp",width:"140px"},{name:"User",width:"160px"},{name:"Role",width:"120px"},{name:"Clearance",width:"100px"},{name:"Action",width:"120px"},{name:"Detail",width:"280px"}],data:rows,sort:true,pagination:{enabled:true,limit:10}};
-  if(!auditGrid){auditGrid=new gridjs.Grid(cfg);auditGrid.render(c);}else auditGrid.updateConfig(cfg).forceRender();
+  var logs = DB.get(KEYS.AUDIT, []);
+  var rows = logs.map(function(l) {
+    return [
+      new Date(l.ts).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", second:"2-digit" }),
+      l.userId,
+      l.role,
+      gridjs.html(clearanceCellHtml(l.clearance)),
+      l.action,
+      l.detail,
+    ];
+  });
+  var cfg = {
+    columns:[{name:"Timestamp",width:"140px"},{name:"User",width:"160px"},{name:"Role",width:"120px"},{name:"Clearance",width:"100px"},{name:"Action",width:"120px"},{name:"Detail",width:"280px"}],
+    data:rows, sort:true, pagination:{ enabled:true, limit:10 },
+  };
+  if (!auditGridInst) { auditGridInst = new gridjs.Grid(cfg); auditGridInst.render(c); }
+  else auditGridInst.updateConfig(cfg).forceRender();
   updateAuditBadge();
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// INIT
+// INIT — DOMContentLoaded
 // ═══════════════════════════════════════════════════════════════════
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", function() {
   buildRBACOverlay();
-  // No auto-login — user must select role from overlay
 });

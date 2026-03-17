@@ -1,0 +1,62 @@
+# ═══════════════════════════════════════════════════════════════════
+# MDL MIS · GitHub Pages Deployment Workflow
+# Deploys index.html, style.css, app.js to GitHub Pages on every
+# push to the main branch.
+#
+# FIX: Updated actions/checkout and actions/upload-artifact to
+# Node.js 24-compatible versions (v4 with FORCE_JAVASCRIPT_ACTIONS_TO_NODE24).
+# ═══════════════════════════════════════════════════════════════════
+
+name: Deploy MDL MIS to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment; skip in-progress runs
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+# Force Node.js 24 on all steps to avoid deprecation warnings
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout repository ──────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Configure GitHub Pages ───────────────────────────────
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # ── 3. Upload the site root as a Pages artifact ─────────────
+      #       path: '.' uploads everything in the repo root.
+      #       If your files are in a subfolder, change path accordingly.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      # ── 4. Deploy to GitHub Pages ────────────────────────────────
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
