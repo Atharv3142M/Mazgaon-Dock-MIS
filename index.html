@@ -4,7 +4,7 @@
 <script src="app.js"></script>
 <head>
   <meta charset="UTF-8" />
-  <title>MDL COMMAND · Digital Shipyard MIS v4.0</title>
+  <title>MDL COMMAND · Digital Shipyard MIS v5.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,9 +18,33 @@
 </head>
 <body>
 
-<div class="app-shell" id="appShell">
+<!-- ═══════════════════════════════════════════════════════════════
+     RBAC ROLE-SELECT OVERLAY
+     Simulates JWT token issuance — active role sets DOM permissions.
+     In production: POST /api/auth/switch-role → new JWT payload.
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="rbac-overlay" id="rbacOverlay">
+  <div class="rbac-panel">
+    <div class="rbac-logo">MDL</div>
+    <div class="rbac-title">MAZAGON DOCK SHIPBUILDERS LIMITED</div>
+    <div class="rbac-subtitle">DIGITAL SHIPYARD MIS v5.0 · SECURE PORTAL</div>
+    <div class="rbac-divider"></div>
+    <div class="rbac-prompt">SELECT OPERATIONAL ROLE TO AUTHENTICATE</div>
+    <div class="rbac-subtitle" style="margin-bottom:20px;font-size:9px;">
+      Principle of Least Privilege enforced · ISO/IEC 27001:2022 · IMO MSC.428(98)
+    </div>
+    <div class="rbac-roles" id="rbacRoles">
+      <!-- Rendered by JS -->
+    </div>
+    <div class="rbac-footer">
+      All access events are logged with timestamp, IP, and role · Immutable audit trail active
+    </div>
+  </div>
+</div>
 
-  <!-- TOP APP BAR -->
+<div class="app-shell" id="appShell" style="display:none">
+
+  <!-- ═══ TOP APP BAR ═══ -->
   <header class="app-bar">
     <div class="app-bar-left">
       <button class="sidebar-toggle" id="sidebarToggle"><i class="fas fa-bars"></i></button>
@@ -28,7 +52,7 @@
         <div class="brand-logo">MDL</div>
         <div class="brand-text">
           <div class="brand-name">MAZAGON DOCK SHIPBUILDERS LIMITED</div>
-          <div class="brand-sub">DIGITAL SHIPYARD MIS v4.0 · NAVRATNA DPSU · BSE: 543237 · EST. 1774</div>
+          <div class="brand-sub">DIGITAL SHIPYARD MIS v5.0 · NAVRATNA DPSU · BSE: 543237 · EST. 1774</div>
         </div>
       </div>
     </div>
@@ -44,59 +68,49 @@
       <div class="header-divider"></div>
       <button class="icon-btn" title="Alerts"><i class="fas fa-bell"></i><span class="badge-dot"></span></button>
       <button class="icon-btn" title="Settings"><i class="fas fa-cog"></i></button>
-      <div class="user-chip">
-        <div class="user-avatar"><i class="fas fa-user-shield"></i></div>
-        <div class="user-info">
-          <div class="user-name">CAPT. JAGMOHAN (CMD)</div>
-          <div class="user-role">L1 CLEARANCE · GLOBAL ENTERPRISE ACCESS</div>
+
+      <!-- ACCOUNT SWITCHER — RBAC role toggle dropdown -->
+      <div class="account-switcher" id="accountSwitcher">
+        <button class="user-chip" id="userChipBtn">
+          <div class="user-avatar" id="userAvatarIcon"><i class="fas fa-user-shield"></i></div>
+          <div class="user-info">
+            <div class="user-name" id="userNameDisplay">--</div>
+            <div class="user-role" id="userRoleDisplay">-- CLEARANCE</div>
+          </div>
+          <i class="fas fa-chevron-down user-chevron" id="userChevron"></i>
+        </button>
+        <!-- Dropdown -->
+        <div class="switcher-dropdown hidden" id="switcherDropdown">
+          <div class="switcher-header">SWITCH ACTIVE ROLE</div>
+          <div class="switcher-hint">Triggers secure JWT re-issue · Least-privilege enforced</div>
+          <div id="switcherRoleList"><!-- populated by JS --></div>
+          <div class="switcher-footer-btn" id="auditLogBtn">
+            <i class="fas fa-scroll"></i> VIEW AUDIT LOG
+          </div>
         </div>
       </div>
     </div>
   </header>
 
-  <!-- MAIN LAYOUT -->
+  <!-- ═══ MAIN LAYOUT ═══ -->
   <div class="layout-body">
 
-    <!-- SIDEBAR -->
+    <!-- SIDEBAR — items conditionally shown per active RBAC role -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-section-label">COMMAND MODULES</div>
-      <nav class="sidebar-nav">
-        <div class="sidebar-item active" data-view="ess">
-          <i class="fas fa-satellite-dish"></i>
-          <div class="sidebar-item-text"><span class="sidebar-item-title">Financial Command</span><span class="sidebar-item-sub">SAP-FI/CO · ESS Layer</span></div>
-          <div class="sidebar-indicator"></div>
-        </div>
-        <div class="sidebar-item" data-view="projects">
-          <i class="fas fa-anchor"></i>
-          <div class="sidebar-item-text"><span class="sidebar-item-title">Project &amp; Spatial MIS</span><span class="sidebar-item-sub">SAP-PS · Portfolio View</span></div>
-          <div class="sidebar-indicator"></div>
-        </div>
-        <div class="sidebar-item" data-view="supply">
-          <i class="fas fa-boxes-stacked"></i>
-          <div class="sidebar-item-text"><span class="sidebar-item-title">Supply Chain &amp; Vendors</span><span class="sidebar-item-sub">SAP-MM · ROMIS · Procurement</span></div>
-          <div class="sidebar-indicator"></div>
-        </div>
-        <div class="sidebar-item" data-view="hcm">
-          <i class="fas fa-hard-hat"></i>
-          <div class="sidebar-item-text"><span class="sidebar-item-title">Human Capital &amp; HSE</span><span class="sidebar-item-sub">SAP-HCM / SAP-EHS · TPS</span></div>
-          <div class="sidebar-indicator"></div>
-        </div>
-        <div class="sidebar-item" data-view="compliance">
-          <i class="fas fa-flag"></i>
-          <div class="sidebar-item-text"><span class="sidebar-item-title">Indigenization &amp; CSR</span><span class="sidebar-item-sub">Compliance · Aatmanirbhar</span></div>
-          <div class="sidebar-indicator"></div>
-        </div>
+      <nav class="sidebar-nav" id="sidebarNav">
+        <!-- Rendered by RBAC engine -->
       </nav>
-
-      <div class="sidebar-section-label mt-4">ARCHITECTURE LAYER</div>
+      <div class="sidebar-section-label mt-4">ACTIVE SESSION</div>
+      <div class="sidebar-meta-item"><i class="fas fa-id-badge"></i><span id="metaRole">--</span></div>
+      <div class="sidebar-meta-item"><i class="fas fa-shield-halved"></i><span id="metaClearance">--</span></div>
+      <div class="sidebar-meta-item"><i class="fas fa-clock"></i><span id="metaSession">Session active</span></div>
+      <div class="sidebar-section-label mt-4">ARCHITECTURE</div>
       <div class="sidebar-meta-item"><i class="fas fa-database"></i><span>localStorage · SAP RDBMS Mock</span></div>
-      <div class="sidebar-meta-item"><i class="fas fa-shield-halved"></i><span>RBAC · ISO/IEC 27001:2022</span></div>
       <div class="sidebar-meta-item"><i class="fas fa-microchip"></i><span>Shipyard 4.0 · APS Engine</span></div>
-      <div class="sidebar-meta-item"><i class="fas fa-broadcast-tower"></i><span>IPMS · AIS Integration Mock</span></div>
-      <div class="sidebar-meta-item"><i class="fas fa-code-branch"></i><span>v4.0.0 · MDL-MIS-PROTO</span></div>
-
+      <div class="sidebar-meta-item"><i class="fas fa-code-branch"></i><span>v5.0.0 · MDL-MIS-PROTO</span></div>
       <div class="sidebar-footer">
-        <div class="sidebar-footer-text">FOUNDED 1774 · NAVRATNA 2024 · GOI DPSU</div>
+        <div class="sidebar-footer-text">FOUNDED 1774 · NAVRATNA 2024 · GOI DPSU · MoD</div>
       </div>
     </aside>
 
@@ -104,9 +118,7 @@
     <main class="content-area">
       <div class="breadcrumb-bar">
         <div class="breadcrumb" id="breadcrumb">
-          <span>MDL HQ</span><i class="fas fa-angle-right"></i>
-          <span>Financial Command</span><i class="fas fa-angle-right"></i>
-          <span>Executive Overview</span>
+          <span>MDL HQ</span><i class="fas fa-angle-right"></i><span>Loading…</span>
         </div>
         <div class="breadcrumb-meta">
           <i class="fas fa-clock"></i>
@@ -115,40 +127,42 @@
         </div>
       </div>
 
-      <!-- ═══════════════════════════════════════════
-           VIEW 1: FINANCIAL COMMAND (ESS · SAP-FI/CO)
-           ═══════════════════════════════════════════ -->
-      <section id="view-ess" class="view">
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: FINANCIAL COMMAND (ESS · SAP-FI/CO)
+           Accessible: Super Admin, Executive Director, Financial Controller
+           ═══════════════════════════════════════════════════════ -->
+      <section id="view-ess" class="view hidden">
         <div class="view-header">
           <div class="view-title-block">
             <div class="view-label">ESS MODULE · SAP-FI/CO + SAP-BW · STANDALONE AUDITED RESULTS FY 2024-25</div>
             <h1 class="view-title">Financial &amp; Economic Command Center</h1>
-            <p class="view-subtitle">Revenue ₹11,431.88 Cr (+20.8% YoY) · PAT ₹2,324.88 Cr · Order Book ₹32,260 Cr · Zero Debt · 20+ years unbroken profitability</p>
+            <p class="view-subtitle">Revenue ₹11,431.88 Cr (+20.8% YoY) · PAT ₹2,324.88 Cr · EBITDA ₹3,228.80 Cr (+95.8%) · Order Book ₹32,260 Cr · Zero Debt</p>
           </div>
           <div class="view-fy-badge">FY25 FINAL</div>
         </div>
 
+        <!-- KPI GRID (6 tiles) -->
         <div class="kpi-grid">
           <div class="kpi-card kpi-primary">
-            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-chart-line"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +20.8% YoY</div></div>
+            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-chart-line"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +20.8%</div></div>
             <div class="kpi-value">₹11,431.88 Cr</div>
             <div class="kpi-label">Revenue from Operations</div>
             <div class="kpi-bar"><div class="kpi-bar-fill" style="width:88%"></div></div>
-            <div class="kpi-footnote">vs ₹9,462.49 Cr in FY24</div>
+            <div class="kpi-footnote">vs ₹9,466.58 Cr FY24</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-coins"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +25.9%</div></div>
             <div class="kpi-value">₹2,324.88 Cr</div>
             <div class="kpi-label">Profit After Tax (PAT)</div>
             <div class="kpi-bar"><div class="kpi-bar-fill" style="width:78%"></div></div>
-            <div class="kpi-footnote">Net Margin: 20.3%</div>
+            <div class="kpi-footnote">Net Margin: 19.9% (+80 bps)</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-chart-bar"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +45.6%</div></div>
-            <div class="kpi-value">₹3,228 Cr</div>
-            <div class="kpi-label">Operating Profit (EBIT)</div>
+            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-chart-bar"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +95.8%</div></div>
+            <div class="kpi-value">₹3,228.80 Cr</div>
+            <div class="kpi-label">EBITDA</div>
             <div class="kpi-bar"><div class="kpi-bar-fill" style="width:82%"></div></div>
-            <div class="kpi-footnote">EBITDA Margin: 27.4%</div>
+            <div class="kpi-footnote">Op. Margin: 18.1% (+310 bps)</div>
           </div>
           <div class="kpi-card kpi-accent">
             <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-ship"></i></div><div class="kpi-delta neutral"><i class="fas fa-bookmark"></i> Active</div></div>
@@ -162,23 +176,24 @@
             <div class="kpi-value">₹21 Bn</div>
             <div class="kpi-label">Cash Flow (Operations)</div>
             <div class="kpi-bar"><div class="kpi-bar-fill" style="width:72%"></div></div>
-            <div class="kpi-footnote">CFI: −₹13Bn · CFF: −₹7Bn</div>
+            <div class="kpi-footnote">Finance costs ↓9.6% · Zero Debt</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-building"></i></div><div class="kpi-delta neutral"><i class="fas fa-minus"></i> Stable</div></div>
-            <div class="kpi-value">₹28,707 Cr</div>
-            <div class="kpi-label">Total Corporate Assets</div>
-            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:65%"></div></div>
-            <div class="kpi-footnote">Equity: ₹7,939 Cr</div>
+            <div class="kpi-top"><div class="kpi-icon"><i class="fas fa-building-columns"></i></div><div class="kpi-delta positive"><i class="fas fa-arrow-up"></i> +28.2%</div></div>
+            <div class="kpi-value">₹3,109.20 Cr</div>
+            <div class="kpi-label">Profit Before Tax (PBT)</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:68%"></div></div>
+            <div class="kpi-footnote">vs ₹2,424.80 Cr FY24</div>
           </div>
         </div>
 
+        <!-- CHARTS -->
         <div class="charts-grid">
           <div class="chart-card chart-large">
             <div class="chart-header">
               <div>
                 <div class="chart-title">5-Year Revenue &amp; PAT Trajectory (FY21–FY25)</div>
-                <div class="chart-subtitle">SAP-FI/CO · Standalone Audited (₹ Crore) · P17A + P15B delivery acceleration</div>
+                <div class="chart-subtitle">SAP-FI/CO · Standalone Audited (₹ Crore) · P15B + P17A delivery acceleration</div>
               </div>
               <div class="chart-badge">DUAL-AXIS</div>
             </div>
@@ -188,9 +203,9 @@
             <div class="chart-header">
               <div>
                 <div class="chart-title">Indigenization Index</div>
-                <div class="chart-subtitle">Aatmanirbhar Bharat · All Active Projects</div>
+                <div class="chart-subtitle">Aatmanirbhar Bharat · Composite All Projects</div>
               </div>
-              <div class="chart-badge">COMPOSITE</div>
+              <div class="chart-badge">AOP</div>
             </div>
             <div class="chart-body chart-body-donut">
               <canvas id="indiChart"></canvas>
@@ -203,238 +218,404 @@
           </div>
         </div>
 
-        <!-- QUARTERLY BREAKDOWN -->
+        <!-- FULL YoY FINANCIAL TABLE (from document) -->
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-table-cells"></i> Quarterly Performance Breakdown · FY 2024-25 (SAP-FI/CO)</div>
-            <div class="panel-badge">Q4 FY25 FINAL</div>
+            <div class="panel-title"><i class="fas fa-table-cells"></i> Full P&amp;L Comparison FY23-24 vs FY24-25 · Period-over-Period Variance (SAP-FI/CO)</div>
+            <div class="panel-badge">AUDITED · STANDALONE</div>
           </div>
           <div class="panel-body">
-            <div class="quarterly-grid">
-              <div class="quarterly-header-row">
-                <div class="qh-cell label-cell">METRIC (₹ Cr)</div>
-                <div class="qh-cell">Q4 FY23-24 (BASE)</div>
-                <div class="qh-cell">Q3 FY24-25</div>
-                <div class="qh-cell highlight-col">Q4 FY24-25</div>
+            <div class="fin-table">
+              <div class="fin-table-header">
+                <div class="fin-th metric-col">FINANCIAL METRIC</div>
+                <div class="fin-th">FY 2023-24 (₹ Cr)</div>
+                <div class="fin-th">FY 2024-25 (₹ Cr)</div>
+                <div class="fin-th">YoY VARIANCE</div>
               </div>
-              <div class="quarterly-row"><div class="qr-label">Revenue from Operations</div><div class="qr-val">₹3,104</div><div class="qr-val">₹3,144</div><div class="qr-val highlight-col">₹3,174</div></div>
-              <div class="quarterly-row"><div class="qr-label">Total Income</div><div class="qr-val">₹3,480</div><div class="qr-val">₹3,430</div><div class="qr-val highlight-col">₹3,520</div></div>
-              <div class="quarterly-row"><div class="qr-label">EBITDA</div><div class="qr-val">₹436</div><div class="qr-val positive-val">₹900</div><div class="qr-val highlight-col positive-val">₹1,104</div></div>
-              <div class="quarterly-row"><div class="qr-label">Profit Before Tax (PBT)</div><div class="qr-val">₹406</div><div class="qr-val positive-val">₹1,063</div><div class="qr-val highlight-col positive-val">₹876</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Revenue from Operations</div><div class="fin-td">9,466.58</div><div class="fin-td bright">11,431.88</div><div class="fin-td positive-val">+20.8%</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Total Income</div><div class="fin-td">10,568.10</div><div class="fin-td bright">12,553.10</div><div class="fin-td positive-val">+18.8%</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Gross Profit</div><div class="fin-td">1,421.20</div><div class="fin-td bright">2,068.90</div><div class="fin-td positive-val">+45.6%</div></div>
+              <div class="fin-row fin-row-accent"><div class="fin-td metric-col">EBITDA</div><div class="fin-td">1,649.00</div><div class="fin-td bright">3,228.80</div><div class="fin-td positive-val">+95.8%</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Profit Before Tax (PBT)</div><div class="fin-td">2,424.80</div><div class="fin-td bright">3,109.20</div><div class="fin-td positive-val">+28.2%</div></div>
+              <div class="fin-row fin-row-accent"><div class="fin-td metric-col">Profit After Tax (PAT)</div><div class="fin-td">1,845.43</div><div class="fin-td bright">2,324.88</div><div class="fin-td positive-val">+25.9%</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Operating Profit Margin</div><div class="fin-td">15.0%</div><div class="fin-td bright">18.1%</div><div class="fin-td positive-val">+310 bps</div></div>
+              <div class="fin-row"><div class="fin-td metric-col">Net Profit Margin</div><div class="fin-td">19.1%</div><div class="fin-td bright">19.9%</div><div class="fin-td positive-val">+80 bps</div></div>
+            </div>
+            <div class="fin-note">⚑ Depreciation increased 38.6% YoY — reflects capitalization of new heavy assets (300T crane, dock infra). MIS asset module synchronized.</div>
+          </div>
+        </div>
+
+        <!-- DIVIDEND + PROMOTER -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-hand-holding-dollar"></i> Dividend Tracker &amp; Promoter Shareholding (FY 2024-25)</div>
+            <div class="panel-badge">DIVIDEND MODULE</div>
+          </div>
+          <div class="panel-body">
+            <div class="dividend-grid">
+              <div class="div-card"><div class="div-label">1st Interim Dividend / Share</div><div class="div-val">₹23.19</div><div class="div-sub">Total payout: ~₹242.03 Cr</div></div>
+              <div class="div-card"><div class="div-label">2nd Interim Dividend / Share</div><div class="div-val">₹3.00</div><div class="div-sub">Declared FY25</div></div>
+              <div class="div-card"><div class="div-label">Promoter Shareholding (GoI)</div><div class="div-val accent">84.83%</div><div class="div-sub">Department of Defence Production</div></div>
+              <div class="div-card"><div class="div-label">Zero Debt Status</div><div class="div-val positive">CONFIRMED</div><div class="div-sub">Finance costs ↓9.6% YoY</div></div>
             </div>
           </div>
         </div>
 
+        <!-- METRICS STRIP -->
         <div class="metrics-strip">
           <div class="metric-item"><div class="metric-label">EBITDA Margin</div><div class="metric-value accent">27.4%</div></div>
           <div class="metric-sep"></div>
-          <div class="metric-item"><div class="metric-label">EPS (Basic)</div><div class="metric-value">₹115.56</div></div>
+          <div class="metric-item"><div class="metric-label">Revenue / Employee</div><div class="metric-value accent">₹47.17M</div></div>
           <div class="metric-sep"></div>
-          <div class="metric-item"><div class="metric-label">Dividend / Share</div><div class="metric-value">₹20.57</div></div>
-          <div class="metric-sep"></div>
-          <div class="metric-item"><div class="metric-label">Book Value / Share</div><div class="metric-value">₹365.12</div></div>
+          <div class="metric-item"><div class="metric-label">Profit / Employee</div><div class="metric-value positive">₹9.21M</div></div>
           <div class="metric-sep"></div>
           <div class="metric-item"><div class="metric-label">Return on Net Worth</div><div class="metric-value accent">31.6%</div></div>
           <div class="metric-sep"></div>
           <div class="metric-item"><div class="metric-label">Debt-to-Equity</div><div class="metric-value positive">0.00x</div></div>
           <div class="metric-sep"></div>
-          <div class="metric-item"><div class="metric-label">Vessels Delivered (Lifetime)</div><div class="metric-value">806</div></div>
+          <div class="metric-item"><div class="metric-label">Promoter Holding</div><div class="metric-value">84.83%</div></div>
+          <div class="metric-sep"></div>
+          <div class="metric-item"><div class="metric-label">Vessels Delivered</div><div class="metric-value">805+</div></div>
           <div class="metric-sep"></div>
           <div class="metric-item"><div class="metric-label">Submarines Delivered</div><div class="metric-value">8</div></div>
         </div>
       </section>
 
-      <!-- ═══════════════════════════════════════════
-           VIEW 2: PROJECT & SPATIAL MIS (SAP-PS)
-           ═══════════════════════════════════════════ -->
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: PROJECT & SPATIAL MIS (SAP-PS)
+           Accessible: Super Admin, Executive Director, Project Commander
+           ═══════════════════════════════════════════════════════ -->
       <section id="view-projects" class="view hidden">
         <div class="view-header">
           <div class="view-title-block">
-            <div class="view-label">TACTICAL MIS · SAP-PS PROJECT SYSTEM · WBS TRACKING · APS SCHEDULING ENGINE</div>
+            <div class="view-label">TACTICAL MIS · SAP-PS PROJECT SYSTEM · WBS TRACKING · APS SCHEDULING</div>
             <h1 class="view-title">Mega-Project &amp; Spatial Utilization Dashboard</h1>
-            <p class="view-subtitle">Active Order Book ₹32,260 Cr · Concurrent capacity: 10 warships + 11 submarines · 806 lifetime deliveries</p>
+            <p class="view-subtitle">Active Order Book ₹32,260 Cr · Concurrent: 10 warships + 11 submarines · 805+ lifetime deliveries · P-75I pipeline ₹70,000–₹1,00,000 Cr</p>
           </div>
-          <button class="primary-btn" id="openAddProjectModal"><i class="fas fa-plus"></i> ADD WBS PROJECT</button>
+          <button class="primary-btn rbac-hide-floor rbac-hide-supply" id="openAddProjectModal"><i class="fas fa-plus"></i> ADD WBS PROJECT</button>
         </div>
 
+        <!-- ORDER BOOK PORTFOLIO -->
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-table-list"></i> Order Book Portfolio · Contract Value / Remaining Balance / SPI (SAP-PS Mock)</div>
-            <div class="panel-badge" id="projCount">9 ACTIVE PROGRAMMES</div>
+            <div class="panel-title"><i class="fas fa-table-list"></i> Order Book Portfolio · SAP-PS WBS Objects (March 31, 2025)</div>
+            <div class="panel-badge" id="projCount">9 PROGRAMMES</div>
           </div>
           <div class="panel-body"><div id="projectsGrid" class="grid-wrap"></div></div>
         </div>
 
-        <!-- INDIGENIZATION BY CLASS -->
+        <!-- VESSEL TRACKING TABLE — P15B & P17A (from document) -->
         <div class="panel mt-4">
           <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-chart-bar"></i> Indigenization by Platform Class · Progressive Increase (QA Compliance Module)</div>
-            <div class="panel-badge">AATMANIRBHAR BHARAT</div>
+            <div class="panel-title"><i class="fas fa-flag-checkered"></i> P15B &amp; P17A Individual Vessel Tracking · Keel / Launch / Commissioning Dates</div>
+            <div class="panel-badge">MILESTONE DATABASE</div>
+          </div>
+          <div class="panel-body">
+            <div class="vessel-table">
+              <div class="vessel-header">
+                <div class="vh-cell">CLASS &amp; PROJECT</div>
+                <div class="vh-cell">VESSEL (PENNANT)</div>
+                <div class="vh-cell">KEEL LAYING</div>
+                <div class="vh-cell">LAUNCHING</div>
+                <div class="vh-cell">DELIVERY / STATUS</div>
+              </div>
+              <!-- P15B rows -->
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p15b">P15B · Destroyer</div>
+                <div class="vd-cell bright">INS Visakhapatnam (D66)</div>
+                <div class="vd-cell mono">Oct 12, 2013</div>
+                <div class="vd-cell mono">Apr 20, 2015</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Commissioned Nov 21, 2021</span></div>
+              </div>
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p15b">P15B · Destroyer</div>
+                <div class="vd-cell bright">INS Mormugao (D67)</div>
+                <div class="vd-cell mono">Jun 4, 2015</div>
+                <div class="vd-cell mono">Sep 17, 2016</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Commissioned Dec 18, 2022</span></div>
+              </div>
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p15b">P15B · Destroyer</div>
+                <div class="vd-cell bright">INS Imphal (D68)</div>
+                <div class="vd-cell mono">May 19, 2017</div>
+                <div class="vd-cell mono">Apr 20, 2019</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Commissioned Dec 26, 2023 · 4 months early</span></div>
+              </div>
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p15b">P15B · Destroyer</div>
+                <div class="vd-cell bright">INS Surat (D69)</div>
+                <div class="vd-cell mono">Jul 19, 2018</div>
+                <div class="vd-cell mono">May 17, 2022</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Commissioned Jan 15, 2025 ★ TRI-EVENT</span></div>
+              </div>
+              <!-- P17A rows -->
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p17a">P17A · Frigate</div>
+                <div class="vd-cell bright">INS Nilgiri (F33)</div>
+                <div class="vd-cell mono">Dec 28, 2017</div>
+                <div class="vd-cell mono">Sep 28, 2019</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Commissioned Jan 15, 2025 ★ TRI-EVENT</span></div>
+              </div>
+              <div class="vessel-row vr-done">
+                <div class="vd-cell class-badge p17a">P17A · Frigate</div>
+                <div class="vd-cell bright">INS Udaygiri (F35)</div>
+                <div class="vd-cell mono">May 7, 2019</div>
+                <div class="vd-cell mono">May 17, 2022</div>
+                <div class="vd-cell"><span class="milestone-tag mt-done">Delivered Jul 1, 2025 · Commissioned Aug 26, 2025</span></div>
+              </div>
+              <div class="vessel-row vr-active">
+                <div class="vd-cell class-badge p17a">P17A · Frigate</div>
+                <div class="vd-cell bright">INS Taragiri</div>
+                <div class="vd-cell mono">Sep 10, 2020</div>
+                <div class="vd-cell mono">Sep 11, 2022</div>
+                <div class="vd-cell"><span class="milestone-tag mt-active">Target: Late 2025 / 2026</span></div>
+              </div>
+              <div class="vessel-row vr-planned">
+                <div class="vd-cell class-badge p17a">P17A · Frigate</div>
+                <div class="vd-cell bright">INS Mahendragiri</div>
+                <div class="vd-cell mono">Jun 28, 2022</div>
+                <div class="vd-cell mono">Sep 1, 2023</div>
+                <div class="vd-cell"><span class="milestone-tag mt-planned">Target: 2026</span></div>
+              </div>
+            </div>
+            <div class="fin-note" style="margin-top:10px">★ Jan 15, 2025: Historic Tri-Commissioning — INS Nilgiri (Frigate) + INS Surat (Destroyer) + INS Vaghsheer (Submarine) commissioned simultaneously by the Indian Navy</div>
+          </div>
+        </div>
+
+        <!-- INDIGENIZATION PROGRESSION -->
+        <div class="panel mt-4">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-chart-bar"></i> Indigenization by Platform Class · Aatmanirbhar Bharat Mandate</div>
+            <div class="panel-badge">COMPLIANCE TRACKER</div>
           </div>
           <div class="panel-body">
             <div class="indi-class-grid">
-              <div class="indi-class-card"><div class="indi-class-name">P15 · Delhi Class Destroyers</div><div class="indi-class-era">1997–2001</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:42%"></div></div><div class="indi-pct">42%</div></div>
-              <div class="indi-class-card"><div class="indi-class-name">P15A · Kolkata Class Destroyers</div><div class="indi-class-era">Follow-on Programme</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:59%"></div></div><div class="indi-pct">59%</div></div>
-              <div class="indi-class-card"><div class="indi-class-name">P15B · Visakhapatnam Destroyers</div><div class="indi-class-era">Follow-on Programme</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:72%"></div></div><div class="indi-pct">72%</div></div>
-              <div class="indi-class-card indi-class-active"><div class="indi-class-name">P17A · Nilgiri Class Frigates</div><div class="indi-class-era">Modern Era · ACTIVE</div><div class="indi-progress-bar"><div class="indi-progress-fill indi-fill-bright" style="width:75%"></div></div><div class="indi-pct accent">75%</div></div>
+              <div class="indi-class-card"><div class="indi-class-name">P15 · Delhi Class</div><div class="indi-class-era">1997–2001</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:42%"></div></div><div class="indi-pct">42%</div></div>
+              <div class="indi-class-card"><div class="indi-class-name">P15A · Kolkata Class</div><div class="indi-class-era">Follow-on</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:59%"></div></div><div class="indi-pct">59%</div></div>
+              <div class="indi-class-card"><div class="indi-class-name">P15B · Visakhapatnam</div><div class="indi-class-era">Follow-on</div><div class="indi-progress-bar"><div class="indi-progress-fill" style="width:72%"></div></div><div class="indi-pct">72%</div></div>
+              <div class="indi-class-card indi-class-active"><div class="indi-class-name">P17A · Nilgiri Class</div><div class="indi-class-era">Modern Era · ACTIVE</div><div class="indi-progress-bar"><div class="indi-progress-fill indi-fill-bright" style="width:75%"></div></div><div class="indi-pct accent">75%</div></div>
             </div>
           </div>
         </div>
 
-        <!-- DRY DOCK ASSETS -->
+        <!-- P-75I PIPELINE ALERT -->
+        <div class="panel mt-4 panel-pipeline">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-rocket"></i> Future Pipeline · Project-75 India (P-75I) &amp; Scorpène-III (SAP-PS Forecast Module)</div>
+            <div class="panel-badge alert-badge">PIPELINE ALERT</div>
+          </div>
+          <div class="panel-body">
+            <div class="pipeline-grid">
+              <div class="pipeline-card">
+                <div class="pipeline-title">Project-75 India (P-75I)</div>
+                <div class="pipeline-value">₹70,000–₹1,00,000 Cr</div>
+                <div class="pipeline-desc">6 next-generation stealth submarines · Indigenous construction · MDL–TKMS (ThyssenKrupp) JV — sole compliant contender after L&T/Navantia disqualification. Order expected FY26.</div>
+                <div class="pipeline-tag">ORDER PENDING</div>
+              </div>
+              <div class="pipeline-card">
+                <div class="pipeline-title">Scorpène-III Additional Submarines</div>
+                <div class="pipeline-value">~₹15,000–₹20,000 Cr (est.)</div>
+                <div class="pipeline-desc">3 additional Kalvari-class submarines. Commercial negotiations expected to conclude by end of FY26.</div>
+                <div class="pipeline-tag">NEGOTIATIONS</div>
+              </div>
+              <div class="pipeline-card pipeline-warn">
+                <div class="pipeline-title">⚑ Combined Order Book Impact</div>
+                <div class="pipeline-value" style="color:var(--yellow)">₹1 Lakh Cr+ Threshold</div>
+                <div class="pipeline-desc">If P-75I + Scorpène-III materialize: APS engine projects massive dock scheduling conflicts. Dry dock expansion and workforce ramp-up mandatory. MIS alert threshold set.</div>
+                <div class="pipeline-tag pipeline-warn-tag">MIS SCENARIO MODELLED</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SPATIAL ASSETS -->
         <div class="panel mt-4">
           <div class="panel-header">
             <div class="panel-title"><i class="fas fa-warehouse"></i> Berth &amp; Dock Utilisation (SAP-PM · APS Spatial Scheduler)</div>
-            <div class="panel-badge">BERTH MANAGEMENT SUBSYSTEM</div>
+            <div class="panel-badge">BERTH MANAGEMENT</div>
           </div>
           <div class="panel-body">
             <div class="dock-grid">
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">DD-01</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Shipbuilding · Dry Dock No. 1</div><div class="dock-project">P17A Ship-3 (INS Taragiri) — Del. Nov 28, 2025</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:88%"></div></div><div class="dock-meta">Utilisation: <strong>88%</strong> · Critical Path Active</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">DD-02</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Shipbuilding · Dry Dock No. 2</div><div class="dock-project">P15B Post-Commission Refit Cycle</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:72%"></div></div><div class="dock-meta">Utilisation: <strong>72%</strong> · Next avail: Q3 FY26</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">SUB-DD</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Submarine Division · Dry Dock</div><div class="dock-project">P75 AIP Medium Refit &amp; Life Extension (MRLC)</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:95%"></div></div><div class="dock-meta">Utilisation: <strong>95%</strong> · ₹2,381 Cr contract</div></div>
-              <div class="dock-card dock-card-special"><div class="dock-header"><div class="dock-id">FDD-NH</div><div class="dock-status status-partial">PARTIAL</div></div><div class="dock-name">Nhava Sheva Floating Dry Dock</div><div class="dock-project">MPV Export Y21001–Y21006 (Navi Merchants, Denmark)</div><div class="dock-util-bar"><div class="dock-util-fill util-yellow" style="width:52%"></div></div><div class="dock-meta">Utilisation: <strong>52%</strong> · 20,000 DWT cap · Keel: Apr 2, 2025</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">WB-01..03</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">3 × Wet Basins (Outfitting)</div><div class="dock-project">P17A / ICGS / Offshore Projects outfitting phases</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:80%"></div></div><div class="dock-meta">Utilisation: <strong>80%</strong> · ROMIS material tracking active</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">CRANE-300T</div><div class="dock-status status-operational">OPERATIONAL</div></div><div class="dock-name">300-Tonne Goliath Crane · East Yard</div><div class="dock-project">P17A / P15B mega-block lifts</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:74%"></div></div><div class="dock-meta">OEE: <strong>91%</strong> · Uptime: 97.2% · Next PM: 15 Aug 2025</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">SLIP-3B+6S</div><div class="dock-status status-operational">ACTIVE</div></div><div class="dock-name">3 Big + 6 Small Slipways · South Yard</div><div class="dock-project">MPV Y21001 production + ICGS FPV series</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:60%"></div></div><div class="dock-meta">Fabrication: <strong>60% util.</strong> · CNC plasma cutters active</div></div>
-              <div class="dock-card"><div class="dock-header"><div class="dock-id">SIF</div><div class="dock-status status-operational">OPERATIONAL</div></div><div class="dock-name">Shore Integration Facility</div><div class="dock-project">IPMS trials · P17A / P75 systems integration</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:88%"></div></div><div class="dock-meta">Harbour trials · AIS telemetry · CBM active · CCTV</div></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- MILESTONE LOG -->
-        <div class="panel mt-4">
-          <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-flag-checkered"></i> Strategic Delivery Milestones · MIS Event Log (SAP-PS History Tables)</div>
-            <div class="panel-badge">806 LIFETIME DELIVERIES</div>
-          </div>
-          <div class="panel-body">
-            <div class="milestone-list">
-              <div class="ms-item ms-done"><div class="ms-dot done"></div><div class="ms-content"><div class="ms-date">Jan 15, 2025</div><div class="ms-title">TRI-COMMISSIONING: INS Nilgiri (P17A) + INS Surat (P15B) + INS Vaghsheer (P75) — simultaneous commissioning, Indian Navy</div></div></div>
-              <div class="ms-item ms-done"><div class="ms-dot done"></div><div class="ms-content"><div class="ms-date">Dec 20, 2024</div><div class="ms-title">P17A Ship-1 (INS Nilgiri) · Delivered to Indian Navy</div></div></div>
-              <div class="ms-item ms-done"><div class="ms-dot done"></div><div class="ms-content"><div class="ms-date">Jul 01, 2025</div><div class="ms-title">P17A Ship-2 (INS Udaygiri) · Delivered · Commissioned Aug 26, 2025</div></div></div>
-              <div class="ms-item ms-done"><div class="ms-dot done"></div><div class="ms-content"><div class="ms-date">Apr 02, 2025</div><div class="ms-title">MPV Y21001 (Navi Merchants, Denmark) · Keel Laying · 116.2m, 7500T DWT · South Yard</div></div></div>
-              <div class="ms-item ms-active"><div class="ms-dot active-dot"></div><div class="ms-content"><div class="ms-date">Nov 28, 2025 (Target)</div><div class="ms-title">P17A Ship-3 (INS Taragiri) · Scheduled Delivery · Dock DD-01 active</div></div></div>
-              <div class="ms-item ms-planned"><div class="ms-dot planned-dot"></div><div class="ms-content"><div class="ms-date">FY26 Pipeline</div><div class="ms-title">P17A Ships 4–7 · P75(I) AIP Programme · ICGS NGOPV × 6 · Offshore Projects Phase 2 (₹5,409 Cr remaining)</div></div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">DD-01</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Shipbuilding · Dry Dock No. 1</div><div class="dock-project">P17A Ship-3 (INS Taragiri) — Del. Late 2025</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:88%"></div></div><div class="dock-meta">Utilisation: <strong>88%</strong> · Critical Path Active</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">DD-02</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Shipbuilding · Dry Dock No. 2</div><div class="dock-project">P15B Refit / P17A Ship-4 Pre-Fab</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:72%"></div></div><div class="dock-meta">Utilisation: <strong>72%</strong> · Next avail: Q3 FY26</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">SUB-DD</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">Submarine Division · Dry Dock</div><div class="dock-project">P75 AIP Plug Retrofit (₹1,990 Cr · Dec 2024 contract)</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:95%"></div></div><div class="dock-meta">Utilisation: <strong>95%</strong> · Submerged endurance extension</div></div>
+              <div class="dock-card dock-card-special"><div class="dock-header"><div class="dock-id">FDD-NH</div><div class="dock-status status-partial">PARTIAL</div></div><div class="dock-name">Nhava · Floating Dry Dock</div><div class="dock-project">MPV Export (Navi Merchants, Denmark — 6 hulls)</div><div class="dock-util-bar"><div class="dock-util-fill util-yellow" style="width:52%"></div></div><div class="dock-meta">Utilisation: <strong>52%</strong> · 20,000 DWT · Keel Apr 2, 2025</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">WB-01..03</div><div class="dock-status status-occupied">OCCUPIED</div></div><div class="dock-name">3 × Wet Basins (Outfitting)</div><div class="dock-project">P17A / ICGS / Offshore Projects outfitting</div><div class="dock-util-bar"><div class="dock-util-fill" style="width:80%"></div></div><div class="dock-meta">Utilisation: <strong>80%</strong> · ROMIS active</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">CRANE-300T</div><div class="dock-status status-operational">OPERATIONAL</div></div><div class="dock-name">300-Tonne Goliath Crane</div><div class="dock-project">P17A / P15B mega-block lifts</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:74%"></div></div><div class="dock-meta">OEE: <strong>91%</strong> · Uptime: 97.2% · Next PM: Aug 2025</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">SLIP-3B+6S</div><div class="dock-status status-operational">ACTIVE</div></div><div class="dock-name">3 Big + 6 Small Slipways</div><div class="dock-project">MPV Y21001–6 + ICGS FPV series</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:60%"></div></div><div class="dock-meta">Fabrication: <strong>60% util.</strong> · CNC plasma active</div></div>
+              <div class="dock-card"><div class="dock-header"><div class="dock-id">SIF</div><div class="dock-status status-operational">OPERATIONAL</div></div><div class="dock-name">Shore Integration Facility</div><div class="dock-project">IPMS trials · P17A / P75 systems</div><div class="dock-util-bar"><div class="dock-util-fill util-green" style="width:88%"></div></div><div class="dock-meta">Harbour trials · AIS · CBM · CCTV active</div></div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ═══════════════════════════════════════════
-           VIEW 3: SUPPLY CHAIN & VENDORS (SAP-MM)
-           ═══════════════════════════════════════════ -->
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: SUPPLY CHAIN & VENDORS (SAP-MM)
+           Accessible: Super Admin, Supply Chain Officer, Project Commander
+           ═══════════════════════════════════════════════════════ -->
       <section id="view-supply" class="view hidden">
         <div class="view-header">
           <div class="view-title-block">
-            <div class="view-label">SAP-MM · MATERIALS MANAGEMENT · ROMIS · VENDOR LIFECYCLE · BARCODE/RFID MOCK</div>
+            <div class="view-label">SAP-MM · MATERIALS MANAGEMENT · ROMIS · VENDOR LIFECYCLE · JPC API MOCK</div>
             <h1 class="view-title">Supply Chain, Procurement &amp; Vendor Management</h1>
-            <p class="view-subtitle">200+ MSMEs (P17A supply chain) · RFID/Barcode tracking · Automated EMD exemption · Green Channel status · 90-day expiry alerts</p>
+            <p class="view-subtitle">200+ MSMEs (P17A) · RFID/Barcode tracking · EMD exemption · Green Channel · JPC steel price monitoring · Import/Export parity</p>
           </div>
-          <button class="primary-btn" id="openAddMaterialModal"><i class="fas fa-plus"></i> ROMIS MATERIAL ISSUE</button>
+          <button class="primary-btn" id="openAddMaterialModal"><i class="fas fa-plus"></i> ROMIS ISSUE</button>
         </div>
 
         <div class="supply-kpis">
           <div class="wf-kpi"><div class="wf-kpi-label">Active Vendors</div><div class="wf-kpi-value" id="kpi-vendors">--</div><div class="wf-kpi-sub">SAP-MM Vendor Master</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Materials Issued (Session)</div><div class="wf-kpi-value" id="kpi-mat-count">--</div><div class="wf-kpi-sub">ROMIS logger</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Below Min Threshold</div><div class="wf-kpi-value" id="kpi-reorders" style="color:var(--red)">--</div><div class="wf-kpi-sub">Reorder trigger active</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">MSME Vendors (P17A)</div><div class="wf-kpi-value accent">200+</div><div class="wf-kpi-sub">Aatmanirbhar Bharat</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Green Channel Vendors</div><div class="wf-kpi-value positive">12</div><div class="wf-kpi-sub">Pre-qualified status</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Expiring (90-day alert)</div><div class="wf-kpi-value" id="kpi-expiring" style="color:var(--yellow)">--</div><div class="wf-kpi-sub">Auto-alert active</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Issues (Session)</div><div class="wf-kpi-value" id="kpi-mat-count">--</div><div class="wf-kpi-sub">ROMIS logger</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Below Min Threshold</div><div class="wf-kpi-value" id="kpi-reorders" style="color:var(--red)">--</div><div class="wf-kpi-sub">Reorder trigger</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">MSMEs (P17A)</div><div class="wf-kpi-value accent">200+</div><div class="wf-kpi-sub">Aatmanirbhar Bharat</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Green Channel</div><div class="wf-kpi-value positive">12</div><div class="wf-kpi-sub">Pre-qualified</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Expiring (90d)</div><div class="wf-kpi-value" id="kpi-expiring" style="color:var(--yellow)">--</div><div class="wf-kpi-sub">Auto-alert active</div></div>
         </div>
 
-        <div class="supply-split">
+        <!-- JPC STEEL PRICE MOCK -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-chart-line"></i> JPC Domestic Steel Price Monitor (Mock API · Joint Plant Committee)</div>
+            <div class="panel-badge">LIVE FEED MOCK</div>
+          </div>
+          <div class="panel-body">
+            <div class="jpc-grid">
+              <div class="jpc-card"><div class="jpc-label">HR Coil (3mm, Mumbai)</div><div class="jpc-val">₹56,400/MT</div><div class="jpc-chg positive">▲ +1.2% WoW</div></div>
+              <div class="jpc-card"><div class="jpc-label">Shipbuilding Plate DH36</div><div class="jpc-val">₹72,800/MT</div><div class="jpc-chg negative">▼ −0.4% WoW</div></div>
+              <div class="jpc-card"><div class="jpc-label">Structural Bulb Bar</div><div class="jpc-val">₹68,200/MT</div><div class="jpc-chg neutral">— Stable</div></div>
+              <div class="jpc-card"><div class="jpc-label">Alloy Pipe (SS 316L)</div><div class="jpc-val">₹3,40,000/MT</div><div class="jpc-chg positive">▲ +2.8% WoW</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KEY SUPPLIERS / BUYERS -->
+        <div class="panel mt-4">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-globe"></i> International Supply Chain · Key Importers &amp; Export Buyers</div>
+            <div class="panel-badge">TRADE INTELLIGENCE</div>
+          </div>
+          <div class="panel-body">
+            <div class="trade-grid">
+              <div>
+                <div class="trade-section-title"><i class="fas fa-arrow-down" style="color:var(--red)"></i> TOP IMPORT SUPPLIERS (USD Value)</div>
+                <div class="trade-item"><span class="trade-name">Vantage Drilling International</span><span class="trade-detail">Drilling equipment modules</span></div>
+                <div class="trade-item"><span class="trade-name">Sapura Fabrication Sdn Bhd</span><span class="trade-detail">Offshore fabricated sections</span></div>
+                <div class="trade-item"><span class="trade-name">Oceaneering Aberdeen</span><span class="trade-detail">ROV &amp; subsea systems</span></div>
+                <div class="trade-item"><span class="trade-name">Suzhou Healthrun New Material</span><span class="trade-detail">Composite materials</span></div>
+              </div>
+              <div>
+                <div class="trade-section-title"><i class="fas fa-arrow-up" style="color:var(--green)"></i> HIGH-VALUE EXPORT BUYERS</div>
+                <div class="trade-item"><span class="trade-name">Safran Electronics &amp; Defense</span><span class="trade-detail">Defence electronics, sensors</span></div>
+                <div class="trade-item"><span class="trade-name">Elbit Systems Electro Optics</span><span class="trade-detail">Optronics &amp; EO systems</span></div>
+                <div class="trade-item"><span class="trade-name">Navi Merchants (Denmark)</span><span class="trade-detail">6× MPV hulls (Y21001-06)</span></div>
+                <div class="trade-item"><span class="trade-name">Indian Navy / MoD</span><span class="trade-detail">Primary strategic customer</span></div>
+              </div>
+            </div>
+            <div class="fin-note" style="margin-top:8px">Logistics routes: Nhava Sheva → Le Havre / Hamburg (sea freight) · Mumbai → Frankfurt (air freight for precision components)</div>
+          </div>
+        </div>
+
+        <div class="supply-split mt-4">
           <div class="panel">
             <div class="panel-header">
-              <div class="panel-title"><i class="fas fa-warehouse"></i> Inventory Master (SAP-MM · Warehouse Mgmt · RFID Mock)</div>
+              <div class="panel-title"><i class="fas fa-warehouse"></i> Inventory Master (SAP-MM · RFID Mock)</div>
               <div class="panel-badge">STOCK REGISTER</div>
             </div>
             <div class="panel-body"><div id="inventoryGrid" class="grid-wrap"></div></div>
           </div>
-
           <div class="space-col">
             <div class="panel">
               <div class="panel-header">
-                <div class="panel-title"><i class="fas fa-pen-to-square"></i> ROMIS · Material Issue Logger (SAP-MM BAPI_GOODSMVT_CREATE)</div>
+                <div class="panel-title"><i class="fas fa-pen-to-square"></i> ROMIS · Material Issue Logger</div>
                 <div class="panel-badge">OUTFITTING TPS</div>
               </div>
               <div class="panel-body">
                 <div class="form-row-2">
-                  <div class="form-group">
-                    <label class="form-label">Material Type</label>
-                    <select class="form-select" id="matType">
-                      <option value="Steel Plate">Steel Plate (Grade DH36)</option>
-                      <option value="Alloy Pipe">High-Pressure Alloy Pipe</option>
-                      <option value="Bulb Bar">Bulb Bar (Structural)</option>
-                      <option value="Cable Tray">Cable Tray Assembly</option>
-                      <option value="Valve Assembly">Valve Assembly</option>
-                      <option value="Generator Set">Generator Set Module</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Project / Cost Centre</label>
-                    <select class="form-select" id="matProject">
-                      <option value="P17A">P17A · Stealth Frigates</option>
-                      <option value="P75">P75 · Submarines (AIP)</option>
-                      <option value="P15B">P15B · Destroyers</option>
-                      <option value="MPV-EXP">MPV Export (Navi Merchants)</option>
-                      <option value="ICGS">ICGS · Coast Guard</option>
-                    </select>
-                  </div>
+                  <div class="form-group"><label class="form-label">Material Type</label><select class="form-select" id="matType"><option value="Steel Plate">Steel Plate (Grade DH36)</option><option value="Alloy Pipe">High-Pressure Alloy Pipe</option><option value="Bulb Bar">Bulb Bar (Structural)</option><option value="Cable Tray">Cable Tray Assembly</option><option value="Valve Assembly">Valve Assembly</option><option value="Generator Set">Generator Set Module</option></select></div>
+                  <div class="form-group"><label class="form-label">Project / Cost Centre</label><select class="form-select" id="matProject"><option value="P17A">P17A · Stealth Frigates</option><option value="P75">P75 · AIP Retrofit</option><option value="P15B">P15B · Destroyers</option><option value="MPV-EXP">MPV Export</option><option value="ICGS">ICGS · Coast Guard</option></select></div>
                 </div>
                 <div class="form-row-3">
                   <div class="form-group"><label class="form-label">Heat / Batch No.</label><input class="form-input" id="matHeat" type="text" placeholder="HT-25-044" /></div>
                   <div class="form-group"><label class="form-label">Quantity</label><input class="form-input" id="matQty" type="number" min="1" placeholder="24" /></div>
-                  <div class="form-group"><label class="form-label">Staging Location</label><input class="form-input" id="matLocation" type="text" placeholder="SY-B2-R4" /></div>
+                  <div class="form-group"><label class="form-label">Location</label><input class="form-input" id="matLocation" type="text" placeholder="SY-B2-R4" /></div>
                 </div>
                 <button class="primary-btn full-width" id="logMaterialBtn"><i class="fas fa-save"></i> COMMIT ROMIS ISSUE</button>
-                <div class="form-success hidden" id="matFormMsg"><i class="fas fa-check-circle"></i> Issue committed to localStorage (SAP-MM ROMIS Mock)</div>
+                <div class="form-success hidden" id="matFormMsg"><i class="fas fa-check-circle"></i> Committed to localStorage (SAP-MM ROMIS Mock)</div>
               </div>
             </div>
-
             <div class="panel mt-4">
-              <div class="panel-header">
-                <div class="panel-title"><i class="fas fa-truck"></i> Vendor Register · EMD &amp; Green Channel (SAP-MM Vendor Master)</div>
-                <div class="panel-badge">VENDOR LIFECYCLE</div>
-              </div>
+              <div class="panel-header"><div class="panel-title"><i class="fas fa-truck"></i> Vendor Register · EMD &amp; Green Channel</div><div class="panel-badge">VENDOR MASTER</div></div>
               <div class="panel-body"><div id="vendorGrid" class="grid-wrap"></div></div>
             </div>
           </div>
         </div>
 
         <div class="panel mt-4">
-          <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-list"></i> ROMIS · Live Material Issue Register (Real-Time Outfitting MIS)</div>
-            <div class="panel-badge" id="matIssueCount">0 ISSUES</div>
-          </div>
+          <div class="panel-header"><div class="panel-title"><i class="fas fa-list"></i> ROMIS · Live Material Issue Register</div><div class="panel-badge" id="matIssueCount">0 ISSUES</div></div>
           <div class="panel-body"><div id="materialsGrid" class="grid-wrap"></div></div>
         </div>
       </section>
 
-      <!-- ═══════════════════════════════════════════
-           VIEW 4: HUMAN CAPITAL & HSE (SAP-HCM/EHS)
-           ═══════════════════════════════════════════ -->
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: HUMAN CAPITAL & HSE (SAP-HCM/EHS)
+           Accessible: Super Admin, Executive Director, Floor Supervisor
+           ═══════════════════════════════════════════════════════ -->
       <section id="view-hcm" class="view hidden">
         <div class="view-header">
           <div class="view-title-block">
-            <div class="view-label">OPERATIONAL TPS · SAP-HCM · SAP-EHS · ISO 45001:2018 · RBAC USER MANAGEMENT</div>
+            <div class="view-label">OPERATIONAL TPS · SAP-HCM · SAP-EHS · ISO 45001:2018 · RBAC ORG MANAGEMENT</div>
             <h1 class="view-title">Human Capital &amp; HSE Command</h1>
-            <p class="view-subtitle">2,614 Permanent · 3,385 Fixed-Term · ~4,800 Sub-contractors · Revenue/Employee ₹47.17M · ISO 45001 LTIR: 0.41</p>
+            <p class="view-subtitle">2,614 Permanent (−7.11% YoY) · Revenue/Employee ₹47.17M · Profit/Employee ₹9.21M · ISO 45001 · LTIFR tracked · 46 HSE departments</p>
           </div>
         </div>
 
+        <!-- WORKFORCE KPIS (8-col) -->
         <div class="workforce-kpis">
-          <div class="wf-kpi"><div class="wf-kpi-label">Permanent Headcount</div><div class="wf-kpi-value">2,614</div><div class="wf-kpi-sub">↑48 from FY24</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Fixed-Term Workforce</div><div class="wf-kpi-value">3,385</div><div class="wf-kpi-sub">As at Mar 31, 2025</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Sub-Contractors (Peak)</div><div class="wf-kpi-value">~4,800</div><div class="wf-kpi-sub">Multi-yard deployment</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Revenue / Employee</div><div class="wf-kpi-value accent">₹47.17M</div><div class="wf-kpi-sub">+19.2% YoY productivity</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">LTIR (ISO 45001)</div><div class="wf-kpi-value positive">0.41</div><div class="wf-kpi-sub">per 200k man-hours</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Permanent Headcount</div><div class="wf-kpi-value">2,614</div><div class="wf-kpi-sub">Mar 31, 2025</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Fixed-Term</div><div class="wf-kpi-value">3,385</div><div class="wf-kpi-sub">3-yr contracts</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Sub-Contractors</div><div class="wf-kpi-value">~4,800</div><div class="wf-kpi-sub">Peak deployment</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Revenue / Employee</div><div class="wf-kpi-value accent">₹47.17M</div><div class="wf-kpi-sub">+19.2% YoY</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Profit / Employee</div><div class="wf-kpi-value positive">₹9.21M</div><div class="wf-kpi-sub">Automation-driven</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">LTIFR (ISO 45001)</div><div class="wf-kpi-value positive">0.41</div><div class="wf-kpi-sub">per 200k hrs</div></div>
           <div class="wf-kpi"><div class="wf-kpi-label">Near-Miss (Session)</div><div class="wf-kpi-value" id="kpi-near-miss">--</div><div class="wf-kpi-sub">Live HSE logger</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">Sub-Con Hrs (Session)</div><div class="wf-kpi-value" id="kpi-subcon-hrs">--</div><div class="wf-kpi-sub">Cumulative logged</div></div>
-          <div class="wf-kpi"><div class="wf-kpi-label">SC/ST Representation</div><div class="wf-kpi-value">14.68%</div><div class="wf-kpi-sub">ST: 8.79% permanent</div></div>
+          <div class="wf-kpi"><div class="wf-kpi-label">Sub-Con Hrs (Session)</div><div class="wf-kpi-value" id="kpi-subcon-hrs">--</div><div class="wf-kpi-sub">Cumulative</div></div>
         </div>
 
-        <!-- LEADERSHIP / RBAC TABLE -->
+        <!-- 5-YEAR HEADCOUNT TREND (from document) -->
         <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-chart-area"></i> 5-Year Workforce Trend · Efficiency Optimization (SAP-HCM Analytics)</div>
+            <div class="panel-badge">AUTOMATION DRIVEN</div>
+          </div>
+          <div class="panel-body">
+            <div class="headcount-trend">
+              <div class="hc-bar-wrap">
+                <div class="hc-year">FY21</div>
+                <div class="hc-bar-container"><div class="hc-bar" style="width:100%"><span>3,687</span></div></div>
+              </div>
+              <div class="hc-bar-wrap">
+                <div class="hc-year">FY22</div>
+                <div class="hc-bar-container"><div class="hc-bar" style="width:90.7%"><span>3,344</span></div></div>
+              </div>
+              <div class="hc-bar-wrap">
+                <div class="hc-year">FY23</div>
+                <div class="hc-bar-container"><div class="hc-bar" style="width:81.1%"><span>2,988</span></div></div>
+              </div>
+              <div class="hc-bar-wrap">
+                <div class="hc-year">FY24</div>
+                <div class="hc-bar-container"><div class="hc-bar" style="width:76.3%"><span>2,814</span></div></div>
+              </div>
+              <div class="hc-bar-wrap">
+                <div class="hc-year">FY25</div>
+                <div class="hc-bar-container"><div class="hc-bar hc-bar-current" style="width:70.9%"><span>2,614 ▼7.11%</span></div></div>
+              </div>
+            </div>
+            <div class="fin-note">Declining headcount + surging revenue = automation, digital twin testing, and advanced robotics driving productivity. Revenue/Employee rose from ~₹11M (FY21) to ₹47.17M (FY25).</div>
+          </div>
+        </div>
+
+        <!-- LEADERSHIP + RBAC TABLE -->
+        <div class="panel mt-4">
           <div class="panel-header">
             <div class="panel-title"><i class="fas fa-users-gear"></i> Board &amp; KMP · RBAC Module Access Assignments (SAP-HCM · ISO/IEC 27001)</div>
             <div class="panel-badge">ORG HIERARCHY</div>
@@ -442,76 +623,38 @@
           <div class="panel-body"><div id="leadershipGrid" class="grid-wrap"></div></div>
         </div>
 
+        <!-- HSE SPLIT -->
         <div class="hse-split mt-4">
           <div class="panel hse-form-panel">
-            <div class="panel-header">
-              <div class="panel-title"><i class="fas fa-pen-to-square"></i> HSE Incident / Sub-Con Logger (SAP-EHS · ISO 45001)</div>
-              <div class="panel-badge">TPS ENTRY</div>
-            </div>
+            <div class="panel-header"><div class="panel-title"><i class="fas fa-pen-to-square"></i> HSE Incident / Sub-Con Logger (SAP-EHS · ISO 45001)</div><div class="panel-badge">TPS ENTRY</div></div>
             <div class="panel-body">
-              <div class="form-group">
-                <label class="form-label">Log Type</label>
-                <select class="form-select" id="hseLogType">
-                  <option value="near-miss">Near-Miss Incident</option>
-                  <option value="subcon">Sub-Contractor Hours</option>
-                  <option value="hazard">Hazard Observation</option>
-                  <option value="toolbox">Toolbox Talk</option>
-                  <option value="permit">Permit-to-Work (Confined Space)</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Shift / Zone</label>
-                <select class="form-select" id="hseShift">
-                  <option value="A-East">A Shift · East Yard</option>
-                  <option value="B-East">B Shift · East Yard</option>
-                  <option value="A-Sub">A Shift · Submarine Div.</option>
-                  <option value="B-Sub">B Shift · Submarine Div.</option>
-                  <option value="NH-Dock">Nhava Sheva · FDD Zone</option>
-                  <option value="SIF">Shore Integration Facility</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Description / Activity</label>
-                <textarea class="form-textarea" id="hseDescription" rows="3" placeholder="e.g. Unsecured toolbox at Dock-2 upper gantry. No injury. PPE worn. Corrective action taken immediately."></textarea>
-              </div>
+              <div class="form-group"><label class="form-label">Log Type</label><select class="form-select" id="hseLogType"><option value="near-miss">Near-Miss Incident</option><option value="subcon">Sub-Contractor Hours</option><option value="hazard">Hazard Observation (HIRA)</option><option value="toolbox">Toolbox Talk</option><option value="permit">Permit-to-Work (Confined Space)</option></select></div>
+              <div class="form-group"><label class="form-label">Shift / Zone</label><select class="form-select" id="hseShift"><option value="A-East">A Shift · East Yard</option><option value="B-East">B Shift · East Yard</option><option value="A-Sub">A Shift · Submarine Div.</option><option value="B-Sub">B Shift · Submarine Div.</option><option value="NH-Dock">Nhava Sheva · FDD Zone</option><option value="SIF">Shore Integration Facility</option></select></div>
+              <div class="form-group"><label class="form-label">Description / Activity</label><textarea class="form-textarea" id="hseDescription" rows="3" placeholder="e.g. Suspended load > 300T detected below walkway. Area evacuated. No injury. PPE compliant."></textarea></div>
               <div class="form-row-2">
                 <div class="form-group"><label class="form-label">Personnel / Contractor ID</label><input class="form-input" id="hsePersonnel" type="text" placeholder="CTR-2841" /></div>
-                <div class="form-group"><label class="form-label">Man-Hours (sub-con)</label><input class="form-input" id="hseHours" type="number" min="0" step="0.5" placeholder="8.5" /></div>
+                <div class="form-group"><label class="form-label">Man-Hours</label><input class="form-input" id="hseHours" type="number" min="0" step="0.5" placeholder="8.5" /></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Severity (ISO 45001 Risk Matrix)</label>
-                <div class="severity-selector" id="severitySelector">
-                  <button class="sev-btn sev-low active" data-sev="LOW">LOW</button>
-                  <button class="sev-btn sev-med" data-sev="MED">MEDIUM</button>
-                  <button class="sev-btn sev-high" data-sev="HIGH">HIGH</button>
-                  <button class="sev-btn sev-crit" data-sev="CRIT">CRITICAL</button>
-                </div>
-              </div>
+              <div class="form-group"><label class="form-label">Severity (ISO 45001 Risk Matrix)</label><div class="severity-selector" id="severitySelector"><button class="sev-btn sev-low active" data-sev="LOW">LOW</button><button class="sev-btn sev-med" data-sev="MED">MEDIUM</button><button class="sev-btn sev-high" data-sev="HIGH">HIGH</button><button class="sev-btn sev-crit" data-sev="CRIT">CRITICAL</button></div></div>
               <button class="primary-btn full-width mt-3" id="logHseBtn"><i class="fas fa-save"></i> COMMIT LOG ENTRY</button>
-              <div class="form-success hidden" id="hseFormMsg"><i class="fas fa-check-circle"></i> Entry committed · localStorage (SAP-EHS Mock)</div>
+              <div class="form-success hidden" id="hseFormMsg"><i class="fas fa-check-circle"></i> Committed · localStorage (SAP-EHS Mock)</div>
             </div>
           </div>
           <div class="panel hse-grid-panel">
-            <div class="panel-header">
-              <div class="panel-title"><i class="fas fa-table"></i> Live Incident &amp; Activity Register · Digital Audit Trail</div>
-              <div class="panel-badge" id="hseEntryCount">0 ENTRIES</div>
-            </div>
+            <div class="panel-header"><div class="panel-title"><i class="fas fa-table"></i> Live Incident &amp; Activity Register · Immutable Audit Trail</div><div class="panel-badge" id="hseEntryCount">0 ENTRIES</div></div>
             <div class="panel-body"><div id="hseGrid" class="grid-wrap"></div></div>
           </div>
         </div>
 
         <!-- RECRUITMENT -->
         <div class="panel mt-4">
-          <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-user-plus"></i> Recruitment Drive Tracker · 1,388 Non-Executive Vacancies (SAP-HCM)</div>
-            <div class="panel-badge">ACTIVE DRIVE</div>
-          </div>
+          <div class="panel-header"><div class="panel-title"><i class="fas fa-user-plus"></i> Recruitment Drive · 1,388 Non-Executive Vacancies (SAP-HCM)</div><div class="panel-badge">ACTIVE DRIVE</div></div>
           <div class="panel-body">
             <div class="recruitment-grid">
               <div class="rec-card"><div class="rec-label">Total Vacancies</div><div class="rec-val">1,388</div></div>
-              <div class="rec-card"><div class="rec-label">Trade: Electricians</div><div class="rec-val">312</div></div>
-              <div class="rec-card"><div class="rec-label">Trade: Fitters</div><div class="rec-val">428</div></div>
-              <div class="rec-card"><div class="rec-label">Trade: Welders</div><div class="rec-val">380</div></div>
+              <div class="rec-card"><div class="rec-label">Electricians</div><div class="rec-val">312</div></div>
+              <div class="rec-card"><div class="rec-label">Fitters</div><div class="rec-val">428</div></div>
+              <div class="rec-card"><div class="rec-label">Welders</div><div class="rec-val">380</div></div>
               <div class="rec-card"><div class="rec-label">Disability Reserved</div><div class="rec-val" style="color:var(--yellow)">56</div></div>
               <div class="rec-card"><div class="rec-label">Contract Term</div><div class="rec-val">3+1+1 Yrs</div></div>
             </div>
@@ -519,15 +662,16 @@
         </div>
       </section>
 
-      <!-- ═══════════════════════════════════════════
-           VIEW 5: INDIGENIZATION & CSR (COMPLIANCE)
-           ═══════════════════════════════════════════ -->
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: INDIGENIZATION & CSR (COMPLIANCE)
+           Accessible: Super Admin, Executive Director
+           ═══════════════════════════════════════════════════════ -->
       <section id="view-compliance" class="view hidden">
         <div class="view-header">
           <div class="view-title-block">
             <div class="view-label">COMPLIANCE MODULE · ISO 9001/14001/45001/50001 · IMO MSC.428(98) · BRSR · SECTION 135</div>
             <h1 class="view-title">Indigenization, CSR &amp; Compliance Command</h1>
-            <p class="view-subtitle">200+ MSMEs · CSR Spend ₹33.10 Cr FY25 · 46 CSR projects · ISO multi-certified · Production KPI dashboard (APS)</p>
+            <p class="view-subtitle">200+ MSMEs · CSR ₹33.10 Cr FY25 · 46 CSR projects · HIRA workflows · LTIFR/TRIR tracking · ISO multi-certified</p>
           </div>
           <div class="view-fy-badge">FY25 COMPLIANT</div>
         </div>
@@ -536,68 +680,112 @@
           <div class="iso-badge iso-green"><i class="fas fa-check-circle"></i><span>ISO 9001:2015</span><span class="iso-sub">Quality Mgmt</span></div>
           <div class="iso-badge iso-green"><i class="fas fa-check-circle"></i><span>ISO 14001:2015</span><span class="iso-sub">Environment</span></div>
           <div class="iso-badge iso-green"><i class="fas fa-check-circle"></i><span>ISO 50001:2018</span><span class="iso-sub">Energy Mgmt</span></div>
-          <div class="iso-badge iso-green"><i class="fas fa-check-circle"></i><span>ISO 45001:2018</span><span class="iso-sub">OH&amp;S Safety</span></div>
-          <div class="iso-badge iso-blue"><i class="fas fa-shield-halved"></i><span>IMO MSC.428(98)</span><span class="iso-sub">Cyber Risk Mgmt</span></div>
-          <div class="iso-badge iso-blue"><i class="fas fa-lock"></i><span>ISO/IEC 27001:2022</span><span class="iso-sub">InfoSec Mgmt</span></div>
+          <div class="iso-badge iso-green"><i class="fas fa-check-circle"></i><span>ISO 45001:2018</span><span class="iso-sub">OH&amp;S · 46 depts</span></div>
+          <div class="iso-badge iso-blue"><i class="fas fa-shield-halved"></i><span>IMO MSC.428(98)</span><span class="iso-sub">Cyber Risk</span></div>
+          <div class="iso-badge iso-blue"><i class="fas fa-lock"></i><span>ISO/IEC 27001:2022</span><span class="iso-sub">InfoSec</span></div>
         </div>
 
+        <!-- CSR WITH BREAKDOWN (from document: 69% Health, 20% Ed, 2% R&D, 9% other) -->
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-hand-holding-heart"></i> CSR Financial Ledger FY 2024-25 · Section 135 Companies Act 2013</div>
-            <div class="panel-badge">46 PROJECTS · FY25</div>
+            <div class="panel-title"><i class="fas fa-hand-holding-heart"></i> CSR Financial Ledger &amp; Sectoral Breakdown FY 2024-25 · Section 135 Companies Act 2013</div>
+            <div class="panel-badge">46 PROJECTS</div>
           </div>
           <div class="panel-body">
-            <div class="csr-ledger-grid">
-              <div class="csr-item"><div class="csr-label">Statutory Obligation (2% avg. 3yr net profit)</div><div class="csr-val">₹30.51 Cr</div></div>
-              <div class="csr-item"><div class="csr-label">Carry Forward (prior multi-year ongoing projects)</div><div class="csr-val">₹2.15 Cr</div></div>
-              <div class="csr-item"><div class="csr-label">Set-off Adjustment (excess spent FY23-24)</div><div class="csr-val" style="color:var(--red)">−₹0.21 Cr</div></div>
-              <div class="csr-item csr-total"><div class="csr-label">TOTAL OBLIGATION FY25</div><div class="csr-val accent">₹32.45 Cr</div></div>
-              <div class="csr-item csr-total"><div class="csr-label">ACTUAL AMOUNT SPENT</div><div class="csr-val positive">₹33.10 Cr</div></div>
-              <div class="csr-item"><div class="csr-label">Excess (Carry-forward set-off → FY25-26)</div><div class="csr-val positive">+₹0.65 Cr</div></div>
-            </div>
-            <div class="csr-domains">
-              <div class="csr-domain-badge"><i class="fas fa-graduation-cap"></i> Education</div>
-              <div class="csr-domain-badge"><i class="fas fa-stethoscope"></i> Health &amp; Sanitation</div>
-              <div class="csr-domain-badge"><i class="fas fa-screwdriver-wrench"></i> Skill Development</div>
-              <div class="csr-domain-badge"><i class="fas fa-house"></i> Village Development</div>
+            <div class="csr-split">
+              <div class="csr-ledger-grid">
+                <div class="csr-item"><div class="csr-label">Statutory Obligation (2% avg. net profit)</div><div class="csr-val">₹30.51 Cr</div></div>
+                <div class="csr-item"><div class="csr-label">Carry Forward (prior multi-year projects)</div><div class="csr-val">₹2.15 Cr</div></div>
+                <div class="csr-item"><div class="csr-label">Set-off (excess spent FY23-24)</div><div class="csr-val" style="color:var(--red)">−₹0.21 Cr</div></div>
+                <div class="csr-item csr-total"><div class="csr-label">TOTAL OBLIGATION FY25</div><div class="csr-val accent">₹32.45 Cr</div></div>
+                <div class="csr-item csr-total"><div class="csr-label">ACTUAL AMOUNT SPENT</div><div class="csr-val positive">₹33.10 Cr</div></div>
+                <div class="csr-item"><div class="csr-label">Excess (set-off against FY25-26)</div><div class="csr-val positive">+₹0.65 Cr</div></div>
+              </div>
+              <!-- CSR SECTOR BREAKDOWN (from document) -->
+              <div class="csr-sector-chart">
+                <div class="csr-sector-title">SECTORAL ALLOCATION FY25</div>
+                <div class="csr-sector-bar">
+                  <div class="csrb-item">
+                    <div class="csrb-label"><i class="fas fa-stethoscope"></i> Health &amp; Nutrition</div>
+                    <div class="csrb-track"><div class="csrb-fill" style="width:69%;background:var(--green)"></div></div>
+                    <div class="csrb-pct positive">69%</div>
+                  </div>
+                  <div class="csrb-item">
+                    <div class="csrb-label"><i class="fas fa-graduation-cap"></i> Education</div>
+                    <div class="csrb-track"><div class="csrb-fill" style="width:20%;background:var(--blue-bright)"></div></div>
+                    <div class="csrb-pct accent">20%</div>
+                  </div>
+                  <div class="csrb-item">
+                    <div class="csrb-label"><i class="fas fa-flask"></i> Research &amp; Innovation</div>
+                    <div class="csrb-track"><div class="csrb-fill" style="width:2%;background:var(--yellow)"></div></div>
+                    <div class="csrb-pct" style="color:var(--yellow)">2%</div>
+                  </div>
+                  <div class="csrb-item">
+                    <div class="csrb-label"><i class="fas fa-ellipsis"></i> Other Sectors</div>
+                    <div class="csrb-track"><div class="csrb-fill" style="width:9%;background:var(--text-muted)"></div></div>
+                    <div class="csrb-pct">9%</div>
+                  </div>
+                </div>
+                <div class="csr-initiative-list">
+                  <div class="csr-init">● Vaccinated 2,800 school girls against cervical cancer (district MoU)</div>
+                  <div class="csr-init">● Specialized pulmonary machinery funded for Nair Hospital, Mumbai</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
+        <!-- OPS KPIs -->
         <div class="panel mt-4">
           <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-gauge-high"></i> Production &amp; Operational KPIs · APS / OEE Lean Engine (Industry 4.0)</div>
-            <div class="panel-badge">SHIPYARD 4.0</div>
+            <div class="panel-title"><i class="fas fa-gauge-high"></i> Production &amp; Operational KPIs · APS / OEE (Shipyard 4.0)</div>
+            <div class="panel-badge">INDUSTRY 4.0</div>
           </div>
           <div class="panel-body">
             <div class="kpi-ops-grid">
-              <div class="kpi-ops-card"><div class="kpi-ops-title">OEE · 300T Goliath Crane</div><div class="kpi-ops-value accent">91.0%</div><div class="kpi-ops-sub">Target ≥88% · MIS alert if below threshold</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:91%"></div></div></div>
-              <div class="kpi-ops-card"><div class="kpi-ops-title">Machine Uptime Rate</div><div class="kpi-ops-value positive">97.2%</div><div class="kpi-ops-sub">Threshold ≥90% · CNC plasma + heavy cranes</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:97%"></div></div></div>
-              <div class="kpi-ops-card"><div class="kpi-ops-title">Labor Productivity (Hrs/Tonne)</div><div class="kpi-ops-value">108 hrs/T</div><div class="kpi-ops-sub">Baseline: 95–120 hrs/T · Within benchmark</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill" style="width:72%"></div></div></div>
-              <div class="kpi-ops-card"><div class="kpi-ops-title">P17A Indigenization Content</div><div class="kpi-ops-value accent">75%</div><div class="kpi-ops-sub">200+ MSMEs · 4,000 direct + 10,000 indirect jobs</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:75%"></div></div></div>
-              <div class="kpi-ops-card"><div class="kpi-ops-title">On-Time Delivery (P15B)</div><div class="kpi-ops-value positive">100%</div><div class="kpi-ops-sub">All 4 vessels early · Hull-3: 5 months ahead</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:100%"></div></div></div>
-              <div class="kpi-ops-card"><div class="kpi-ops-title">Avg. Destroyer Delivery Cycle</div><div class="kpi-ops-value">18 Months</div><div class="kpi-ops-sub">7 destroyers FY14–FY25 · Best-in-class DPSU</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill" style="width:68%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">OEE · 300T Goliath Crane</div><div class="kpi-ops-value accent">91.0%</div><div class="kpi-ops-sub">Target ≥88% · MIS flags below threshold</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:91%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">Machine Uptime Rate</div><div class="kpi-ops-value positive">97.2%</div><div class="kpi-ops-sub">Threshold ≥90% · CNC plasma + cranes</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:97%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">Labor Productivity (Hrs/Tonne)</div><div class="kpi-ops-value">108 hrs/T</div><div class="kpi-ops-sub">Baseline: 95–120 hrs/T · Within range</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill" style="width:72%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">P17A Indigenization</div><div class="kpi-ops-value accent">75%</div><div class="kpi-ops-sub">200+ MSMEs · 4,000 direct + 10,000 indirect jobs</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:75%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">P15B On-Time Delivery</div><div class="kpi-ops-value positive">100%</div><div class="kpi-ops-sub">All 4 vessels early · INS Imphal: 4 months ahead</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill kpi-bar-green" style="width:100%"></div></div></div>
+              <div class="kpi-ops-card"><div class="kpi-ops-title">Avg. Destroyer Cycle</div><div class="kpi-ops-value">18 Months</div><div class="kpi-ops-sub">7 destroyers FY14–FY25 · Best-in-class DPSU</div><div class="kpi-bar mt-2"><div class="kpi-bar-fill" style="width:68%"></div></div></div>
             </div>
           </div>
         </div>
 
+        <!-- SCHEMA -->
         <div class="panel mt-4">
-          <div class="panel-header">
-            <div class="panel-title"><i class="fas fa-database"></i> RDBMS Schema Reference · ERD Blueprint (Production Enterprise Architecture)</div>
-            <div class="panel-badge">NORMALIZED RDBMS</div>
-          </div>
+          <div class="panel-header"><div class="panel-title"><i class="fas fa-database"></i> RDBMS ERD Blueprint (Production Architecture · Normalized Schema)</div><div class="panel-badge">ERD REFERENCE</div></div>
           <div class="panel-body">
             <div class="schema-grid">
               <div class="schema-card"><div class="schema-entity">Projects</div><div class="schema-pk">PK: Project_ID</div><div class="schema-fk">FK: Client_ID</div><div class="schema-attrs">Project_Name · Total_Value · Start_Date · Target_Completion</div></div>
-              <div class="schema-card"><div class="schema-entity">Vessels</div><div class="schema-pk">PK: Vessel_ID</div><div class="schema-fk">FK: Project_ID</div><div class="schema-attrs">Hull_Number · Class · Indigenization_Pct · Status</div></div>
-              <div class="schema-card"><div class="schema-entity">Milestones</div><div class="schema-pk">PK: Milestone_ID</div><div class="schema-fk">FK: Vessel_ID</div><div class="schema-attrs">Event_Type · Event_Date · Completion_Status · Signoff</div></div>
-              <div class="schema-card"><div class="schema-entity">Infrastructure</div><div class="schema-pk">PK: Asset_ID</div><div class="schema-fk">—</div><div class="schema-attrs">Asset_Type · Capacity · Operational_Status · Last_Maint</div></div>
+              <div class="schema-card"><div class="schema-entity">Vessels</div><div class="schema-pk">PK: Vessel_ID</div><div class="schema-fk">FK: Project_ID</div><div class="schema-attrs">Hull_Number · Class · Indigenization_Pct · Status · Keel_Date · Launch_Date</div></div>
+              <div class="schema-card"><div class="schema-entity">Milestones</div><div class="schema-pk">PK: Milestone_ID</div><div class="schema-fk">FK: Vessel_ID</div><div class="schema-attrs">Event_Type · Event_Date · Completion_Status · Verification_Signoff</div></div>
+              <div class="schema-card"><div class="schema-entity">Infrastructure</div><div class="schema-pk">PK: Asset_ID</div><div class="schema-fk">—</div><div class="schema-attrs">Asset_Type · Capacity · Operational_Status · Last_Maintenance_Date</div></div>
               <div class="schema-card"><div class="schema-entity">Inventory_Master</div><div class="schema-pk">PK: Item_Code</div><div class="schema-fk">FK: Vendor_ID</div><div class="schema-attrs">Description · Stock_Qty · Min_Threshold · Unit_Price</div></div>
               <div class="schema-card"><div class="schema-entity">Work_Orders</div><div class="schema-pk">PK: Order_ID</div><div class="schema-fk">FK: Vessel_ID · Asset_ID</div><div class="schema-attrs">Task_Desc · Assigned_Hours · Actual_Hours · Status</div></div>
-              <div class="schema-card"><div class="schema-entity">Personnel</div><div class="schema-pk">PK: Employee_ID</div><div class="schema-fk">FK: Department_ID</div><div class="schema-attrs">Full_Name · Designation · Category · Clearance_Level</div></div>
+              <div class="schema-card"><div class="schema-entity">Personnel</div><div class="schema-pk">PK: Employee_ID</div><div class="schema-fk">FK: Department_ID</div><div class="schema-attrs">Full_Name · Designation · Category · Clearance_Level · Active_Role</div></div>
               <div class="schema-card"><div class="schema-entity">Financial_Ledger</div><div class="schema-pk">PK: Transaction_ID</div><div class="schema-fk">FK: Project_ID</div><div class="schema-attrs">Quarter · Revenue_Recognized · Costs · EBITDA · PAT</div></div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           VIEW: AUDIT LOG (all roles can view their own log)
+           ═══════════════════════════════════════════════════════ -->
+      <section id="view-audit" class="view hidden">
+        <div class="view-header">
+          <div class="view-title-block">
+            <div class="view-label">SECURITY MODULE · IMMUTABLE AUDIT TRAIL · ISO/IEC 27001:2022 · JML WORKFLOW</div>
+            <h1 class="view-title">RBAC Audit Log &amp; Session History</h1>
+            <p class="view-subtitle">Every role switch, data modification, and login event is logged with User ID, Active Role, Timestamp, and Action · Tamper-proof</p>
+          </div>
+          <div class="view-fy-badge">LIVE LOG</div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="fas fa-scroll"></i> Immutable Audit Trail (SAP Security Audit Log mock)</div><div class="panel-badge" id="auditCount">0 EVENTS</div></div>
+          <div class="panel-body"><div id="auditGrid" class="grid-wrap"></div></div>
         </div>
       </section>
 
@@ -614,21 +802,21 @@
     </div>
     <div class="modal-body">
       <div class="form-row-2">
-        <div class="form-group"><label class="form-label">Project WBS Code</label><input class="form-input" id="mProjId" type="text" placeholder="e.g. P29A" /></div>
+        <div class="form-group"><label class="form-label">WBS Code</label><input class="form-input" id="mProjId" type="text" placeholder="e.g. P29A" /></div>
         <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="mProjStatus"><option>On Track</option><option>Slight Overrun</option><option>Managed Overrun</option><option>Underrun</option><option>On Hold</option></select></div>
       </div>
       <div class="form-group"><label class="form-label">Project Description</label><input class="form-input" id="mProjDesc" type="text" placeholder="e.g. Next-Gen Corvette Programme — 4 hulls" /></div>
       <div class="form-row-3">
         <div class="form-group"><label class="form-label">Contract Value (₹ Cr)</label><input class="form-input" id="mProjValue" type="number" min="0" step="0.1" /></div>
-        <div class="form-group"><label class="form-label">Remaining Balance (₹ Cr)</label><input class="form-input" id="mProjBalance" type="number" min="0" step="0.1" /></div>
-        <div class="form-group"><label class="form-label">SPI (Sched. Perf. Index)</label><input class="form-input" id="mProjSpi" type="number" min="0" max="2" step="0.01" placeholder="1.00" /></div>
+        <div class="form-group"><label class="form-label">Remaining (₹ Cr)</label><input class="form-input" id="mProjBalance" type="number" min="0" step="0.1" /></div>
+        <div class="form-group"><label class="form-label">SPI</label><input class="form-input" id="mProjSpi" type="number" min="0" max="2" step="0.01" placeholder="1.00" /></div>
       </div>
       <div class="form-group"><label class="form-label">Indigenization % (Aatmanirbhar Bharat)</label><input class="form-input" id="mProjIndi" type="number" min="0" max="100" step="1" placeholder="75" /></div>
       <div class="modal-footer">
         <button class="secondary-btn" id="cancelProjectModal">CANCEL</button>
         <button class="primary-btn" id="saveProjectBtn"><i class="fas fa-check"></i> SAVE TO SAP-PS</button>
       </div>
-      <div class="form-success hidden" id="projModalMsg"><i class="fas fa-check-circle"></i> WBS Object persisted to localStorage (SAP-PS Mock)</div>
+      <div class="form-success hidden" id="projModalMsg"><i class="fas fa-check-circle"></i> WBS Object persisted (SAP-PS Mock)</div>
     </div>
   </div>
 </div>
