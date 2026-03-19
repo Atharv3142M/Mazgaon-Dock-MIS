@@ -1,228 +1,800 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════
- * MDL DIGITAL SHIPYARD MIS v4.0 · app.js
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MDL DIGITAL SHIPYARD MIS v6.0 · app.js
+ * Database Migration: localStorage → Supabase (PostgreSQL)
  *
- * ARCHITECTURE: localStorage-based SAP integration mock
- *   MODULE          SAP EQUIVALENT      KEY
- *   Financial (ESS) SAP-FI/CO + BW      mdl_v4_strategic
- *   Projects        SAP-PS              mdl_v4_projects
- *   Supply / ROMIS  SAP-MM              mdl_v4_materials, mdl_v4_inventory, mdl_v4_vendors
- *   HSE / HCM       SAP-EHS + SAP-HCM   mdl_v4_hse
- *   Leadership      SAP-HCM Org         mdl_v4_leadership (static)
+ * ARCHITECTURE CHANGE SUMMARY (v5.1 → v6.0):
+ * ───────────────────────────────────────────
+ * Before: All data lived in window.localStorage as JSON strings.
+ *         Reads were synchronous: DB.get(key, fallback)
+ *         Writes were synchronous: DB.set(key, value)
  *
- * CRUD → localStorage:
- *   Read   = localStorage.getItem()   → SAP BAPI_GET_*
- *   Create = localStorage.setItem()   → SAP BAPI_CREATE_* + COMMIT WORK
- *   Update = read → mutate → write    → SAP BAPI_CHANGE_*
+ * After:  All data lives in a hosted Supabase PostgreSQL database.
+ *         Reads are async: await supabase.from('table').select('*')
+ *         Writes are async: await supabase.from('table').insert({...})
+ *         Every data-fetching function is now async and must be awaited.
  *
- * Cybersecurity note (production): All data would transit via
- * encrypted HTTPS through a hardened DMZ gateway, with RBAC
- * enforced per ISO/IEC 27001:2022 and IMO MSC.428(98).
- * ═══════════════════════════════════════════════════════════════════════
+ * SUPABASE JS CLIENT (CDN):
+ *   The Supabase client library is loaded in index.html via:
+ *   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+ *   This exposes the global: window.supabase.createClient(url, key)
+ *
+ * HOW TO CONFIGURE:
+ *   1. Go to your Supabase project → Settings → API
+ *   2. Copy the "Project URL" → paste into SUPABASE_URL below
+ *   3. Copy the "anon public" key → paste into SUPABASE_ANON_KEY below
+ *   4. Save and deploy.
+ *
+ * TABLE MAP (Supabase → SAP equivalent):
+ *   mdl_financials  → SAP-FI/CO + SAP-BW  (ESS Financial Command)
+ *   mdl_projects    → SAP-PS               (Tactical Portfolio Grid)
+ *   mdl_materials   → SAP-MM ROMIS         (Material Issue Logger)
+ *   mdl_inventory   → SAP-MM Inv. Mgmt.    (Stock Levels)
+ *   mdl_vendors     → SAP-MM Vendor Master (Vendor Register)
+ *   mdl_hse         → SAP-EHS              (HSE Incident Register)
+ *
+ * RBAC & AUDIT:
+ *   The RBAC engine (role selection, account switcher) continues to use
+ *   localStorage for the session token — this is intentional. RBAC state
+ *   is per-browser-session metadata, not persistent application data.
+ *   The Audit Log is also kept in localStorage (session-scoped).
+ *   In a production system these would be server-side JWT + DB-backed logs.
+ *
+ * ERROR HANDLING PATTERN:
+ *   Every Supabase call follows this pattern:
+ *     const { data, error } = await supabase.from('...').select('*');
+ *     if (error) { showDbError(error.message); return; }
+ *     // use data safely
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
 "use strict";
 
-// ─── Storage keys ───────────────────────────────────────────────
-const KEYS = {
-  INIT:       "mdl_v4_initialized",
-  STRATEGIC:  "mdl_v4_strategic",
-  PROJECTS:   "mdl_v4_projects",
-  MATERIALS:  "mdl_v4_materials",
-  INVENTORY:  "mdl_v4_inventory",
-  VENDORS:    "mdl_v4_vendors",
-  HSE:        "mdl_v4_hse",
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 1: SUPABASE CONFIGURATION ─────────────────────────────────────────
+//
+// Replace the placeholder strings below with your actual Supabase credentials.
+// Find them at: https://app.supabase.com → Your Project → Settings → API
+//
+// SECURITY NOTE:
+//   The anon key is safe to expose in a public frontend. Supabase's RLS
+//   (Row Level Security) policies on the database are the actual security
+//   boundary. The anon key alone cannot bypass RLS policies.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SUPABASE_URL      = "https://uwjpsqprxgvwbucmymrh.supabase.co";    // e.g. https://xyzabc.supabase.co
+const SUPABASE_ANON_KEY = "sb_publishable_8XFEvqzUhjhLcKtFlkLJgw_UIkpm7yN"; // eyJhbGciOi...
+
+/**
+ * Initialise the Supabase client.
+ *
+ * window.supabase.createClient() is exposed by the CDN-loaded Supabase JS v2
+ * library. It returns a client instance pre-configured with your project URL
+ * and anon key. All subsequent DB calls are made through this single instance.
+ *
+ * Equivalent to: new pg.Pool({ connectionString: SUPABASE_URL }) in Node.js,
+ * but routed through Supabase's auto-generated REST API (PostgREST).
+ */
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 2: LIGHTWEIGHT SESSION STORAGE (localStorage — kept intentionally)
+//
+// Only RBAC session state and the in-browser audit log remain in localStorage.
+// These are browser-session metadata, not application data. They reset on
+// every new session, which is the correct behaviour for a prototype.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SESSION_KEY = "mdl_v6_session";
+const AUDIT_KEY   = "mdl_v6_audit";
+
+const Session = {
+  get()        { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(e) { return null; } },
+  set(val)     { try { localStorage.setItem(SESSION_KEY, JSON.stringify(val)); } catch(e) {} },
+  getAudit()   { try { return JSON.parse(localStorage.getItem(AUDIT_KEY)) || []; } catch(e) { return []; } },
+  appendAudit(entry) {
+    const logs = this.getAudit();
+    logs.unshift(entry);
+    // Keep the last 500 entries to prevent unbounded localStorage growth
+    try { localStorage.setItem(AUDIT_KEY, JSON.stringify(logs.slice(0, 500))); } catch(e) {}
+  },
 };
 
-// ─── Storage abstraction (SAP RFC mock) ─────────────────────────
-const DB = {
-  get(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw === null ? fallback : JSON.parse(raw);
-    } catch (e) {
-      console.warn("[MDL-MIS] Read error:", key, e);
-      return fallback;
-    }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 3: DATABASE API LAYER
+//
+// These functions are the clean interface between the UI and Supabase.
+// Every function is async and returns { data, error }.
+// The UI layer never calls supabase.from() directly — always through these.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * DB_API — All Supabase data access calls.
+ *
+ * PATTERN:
+ *   Each method performs exactly one Supabase PostgREST operation.
+ *   The PostgREST query builder translates method chains into HTTP requests:
+ *
+ *   .from('table')         → Target the table (like FROM in SQL)
+ *   .select('*')           → GET /rest/v1/table?select=* (HTTP GET)
+ *   .insert({...})         → POST /rest/v1/table         (HTTP POST)
+ *   .order('col',{...})    → &order=col.desc             (appended to query)
+ *   .eq('col', val)        → &col=eq.val                 (WHERE col = val)
+ */
+const DB_API = {
+
+  // ── FINANCIALS ───────────────────────────────────────────────────────────
+
+  /**
+   * Fetch all fiscal year rows ordered chronologically.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_financials ORDER BY fiscal_year ASC;
+   *
+   * Used by: renderESS() to build the 5-year revenue/PAT chart
+   *          and the full P&L comparison table.
+   */
+  async getFinancials() {
+    const { data, error } = await supabase
+      .from("mdl_financials")
+      .select("*")
+      .order("fiscal_year", { ascending: true });
+
+    if (error) console.error("[DB_API.getFinancials]", error.message);
+    return { data: data || [], error };
   },
-  set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
-    catch (e) { console.warn("[MDL-MIS] Write error:", key, e); return false; }
+
+  /**
+   * Fetch a single fiscal year row.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_financials WHERE fiscal_year = $1 LIMIT 1;
+   *
+   * @param {string} fy - Fiscal year key, e.g. 'FY25'
+   */
+  async getFinancialByYear(fy) {
+    const { data, error } = await supabase
+      .from("mdl_financials")
+      .select("*")
+      .eq("fiscal_year", fy)
+      .single();           // .single() unwraps the array to one object, throws if 0 or 2+ rows
+
+    if (error) console.error("[DB_API.getFinancialByYear]", error.message);
+    return { data, error };
   },
-};
 
-// ─── Bootstrap (SAP BDC initial data load) ──────────────────────
-function bootstrapMockData() {
-  if (localStorage.getItem(KEYS.INIT)) return;
+  // ── PROJECTS ─────────────────────────────────────────────────────────────
 
-  // SAP-FI/CO: Standalone audited P&L (FY21–FY25)
-  DB.set(KEYS.STRATEGIC, {
-    revenue: { fy21: 4200, fy22: 5100, fy23: 7192, fy24: 9462, fy25: 11432 },
-    pat:     { fy21: 620,  fy22: 810,  fy23: 1385, fy24: 1900, fy25: 2325  },
-    indigenization: { domestic: 76, imports: 24 },
-  });
+  /**
+   * Fetch all WBS projects, ordered by contract value (largest first).
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_projects ORDER BY contract_value_cr DESC;
+   *
+   * Used by: renderProjects() to populate the SAP-PS portfolio grid.
+   */
+  async getProjects() {
+    const { data, error } = await supabase
+      .from("mdl_projects")
+      .select("*")
+      .order("contract_value_cr", { ascending: false });
 
-  // SAP-PS: Project WBS objects — real MDL order book (March 31, 2025)
-  DB.set(KEYS.PROJECTS, [
-    { id:"P17A",     description:"P17A · Nilgiri Class Stealth Frigates (4 vessels, MoD)",      contractValue:28769, remaining:3716,  spi:0.97, indigenization:75, status:"On Track",       createdAt: Date.now()-86400000*180 },
-    { id:"P15B",     description:"P15B · Visakhapatnam Class Destroyers (4 vessels, MoD)",      contractValue:27120, remaining:2849,  spi:1.02, indigenization:72, status:"On Track",       createdAt: Date.now()-86400000*365 },
-    { id:"P75",      description:"P75 · Kalvari Class Scorpène Submarines (6 boats, MoD)",      contractValue:29078, remaining:2493,  spi:1.02, indigenization:60, status:"On Track",       createdAt: Date.now()-86400000*400 },
-    { id:"ICGS",     description:"ICGS · CTS / NGOPV / FPV (21 vessels, Coast Guard)",          contractValue:2829,  remaining:715,   spi:0.95, indigenization:68, status:"Slight Overrun", createdAt: Date.now()-86400000*90  },
-    { id:"OFF-PRPJ", description:"Offshore Projects · PRPP / DSF-II / PRP (ONGC, 3 projects)", contractValue:6524,  remaining:5409,  spi:0.91, indigenization:55, status:"Slight Overrun", createdAt: Date.now()-86400000*60  },
-    { id:"MRLC",     description:"Submarine MRLC · Medium Refit & Life Extension (MoD)",         contractValue:2381,  remaining:1711,  spi:0.98, indigenization:58, status:"On Track",       createdAt: Date.now()-86400000*50  },
-    { id:"AIP",      description:"Air Independent Propulsion (AIP) Retrofit Programme (MoD)",   contractValue:1758,  remaining:1749,  spi:1.00, indigenization:52, status:"On Track",       createdAt: Date.now()-86400000*30  },
-    { id:"MPV-EXP",  description:"Multi-Purpose Hybrid Vessels (6 hulls, Navi Merchants DK)",   contractValue:710,   remaining:710,   spi:0.88, indigenization:42, status:"Slight Overrun", createdAt: Date.now()-86400000*10  },
-    { id:"MISC",     description:"Miscellaneous Support Projects (Various Entities)",             contractValue:256,   remaining:169,   spi:1.01, indigenization:65, status:"On Track",       createdAt: Date.now()-86400000*5   },
-  ]);
+    if (error) console.error("[DB_API.getProjects]", error.message);
+    return { data: data || [], error };
+  },
 
-  // SAP-MM: Inventory Master (Inventory_Master entity from ERD)
-  DB.set(KEYS.INVENTORY, [
-    { code:"RM-SP-DH36",  description:"Steel Plate Grade DH36 (Shipbuilding)",  stock:348,  minThreshold:100, unit:"MT",  unitPrice:72000,  vendorId:"V-SAIL-01", status:"OK"  },
-    { code:"RM-PP-HP316", description:"High-Pressure Alloy Pipe (SS 316L)",     stock:82,   minThreshold:120, unit:"Nos", unitPrice:15500,  vendorId:"V-TUBE-02", status:"LOW" },
-    { code:"RM-BB-STR",   description:"Bulb Bar Structural (KB-300)",            stock:215,  minThreshold:50,  unit:"MT",  unitPrice:68000,  vendorId:"V-SAIL-01", status:"OK"  },
-    { code:"EQ-VALVE-DN", description:"DN150 Gate Valve Assembly (Naval Grade)", stock:44,   minThreshold:60,  unit:"Nos", unitPrice:42000,  vendorId:"V-VALVE-03",status:"LOW" },
-    { code:"EQ-CBTRAY-A", description:"Cable Tray Assembly (GI, 150mm)",         stock:620,  minThreshold:200, unit:"Nos", unitPrice:1800,   vendorId:"V-ELEC-04", status:"OK"  },
-    { code:"EQ-GENSET-M", description:"Generator Set Module (2.5MW Marine)",     stock:4,    minThreshold:2,   unit:"Nos", unitPrice:9200000,vendorId:"V-GEN-05",  status:"OK"  },
-    { code:"RM-CABLE-C",  description:"Multi-Core Control Cable (XLPE, 1000V)",  stock:18500,minThreshold:5000,unit:"m",   unitPrice:185,    vendorId:"V-ELEC-04", status:"OK"  },
-    { code:"EQ-PUMP-BW",  description:"Ballast Water Pump (600 m³/hr)",          stock:6,    minThreshold:4,   unit:"Nos", unitPrice:1850000,vendorId:"V-PUMP-06", status:"OK"  },
-  ]);
+  /**
+   * Insert a new WBS project record.
+   *
+   * SQL equivalent:
+   *   INSERT INTO mdl_projects (wbs_code, description, ...) VALUES ($1, $2, ...);
+   *
+   * .select() appended after .insert() triggers a RETURNING * so Supabase
+   * returns the newly inserted row including its auto-generated 'id' and
+   * 'created_at' fields. Without .select(), data would be null.
+   *
+   * @param {Object} project - Project fields matching the mdl_projects schema
+   */
+  async insertProject(project) {
+    const { data, error } = await supabase
+      .from("mdl_projects")
+      .insert({
+        wbs_code:           project.wbs_code,
+        description:        project.description,
+        contract_value_cr:  project.contract_value_cr,
+        remaining_cr:       project.remaining_cr,
+        spi:                project.spi,
+        indigenization_pct: project.indigenization_pct,
+        status:             project.status,
+      })
+      .select();  // Return the inserted row(s) for immediate UI refresh
 
-  // SAP-MM: Vendor Master — with Green Channel + EMD exemption flags
-  DB.set(KEYS.VENDORS, [
-    { id:"V-SAIL-01",  name:"SAIL Steel Authority of India",     category:"PSU",    material:"Structural Steel",   greenChannel:false, emdExempt:true,  regExpiry: Date.now()+86400000*400, status:"Active"  },
-    { id:"V-TUBE-02",  name:"Patton Tubing Pvt Ltd (MSME)",      category:"MSME",   material:"Pipes & Fittings",    greenChannel:true,  emdExempt:true,  regExpiry: Date.now()+86400000*45,  status:"Active"  },
-    { id:"V-VALVE-03", name:"Kirloskar Brothers Limited",         category:"Large",  material:"Valve Assemblies",    greenChannel:true,  emdExempt:false, regExpiry: Date.now()+86400000*300, status:"Active"  },
-    { id:"V-ELEC-04",  name:"Havells India Ltd",                  category:"Large",  material:"Cables & Elect.",     greenChannel:false, emdExempt:false, regExpiry: Date.now()+86400000*200, status:"Active"  },
-    { id:"V-GEN-05",   name:"BHEL Bhopal (PSU)",                  category:"PSU",    material:"Gensets / Turbines",  greenChannel:true,  emdExempt:true,  regExpiry: Date.now()+86400000*500, status:"Active"  },
-    { id:"V-PUMP-06",  name:"Flowserve India Controls (MSME)",    category:"MSME",   material:"Pumps & Compressors", greenChannel:false, emdExempt:true,  regExpiry: Date.now()+86400000*80,  status:"Active"  },
-  ]);
+    if (error) console.error("[DB_API.insertProject]", error.message);
+    return { data, error };
+  },
 
-  // SAP-MM: ROMIS seed material issues
-  DB.set(KEYS.MATERIALS, [
-    { id:crypto.randomUUID(), material:"Steel Plate (Grade DH36)", heatNo:"HT-25-019", qty:24, project:"P17A", location:"SY-B2-R4", createdAt: Date.now()-3600000*6 },
-    { id:crypto.randomUUID(), material:"High-Pressure Alloy Pipe", heatNo:"PP-25-007", qty:60, project:"P75",  location:"SUB-C3-L2",createdAt: Date.now()-3600000*2 },
-  ]);
+  // ── MATERIALS (ROMIS) ────────────────────────────────────────────────────
 
-  // SAP-EHS: Incident register seed entries
-  DB.set(KEYS.HSE, [
-    { id:crypto.randomUUID(), logType:"near-miss", shift:"A-East",  description:"Unsecured toolbox near Dock-2 upper gantry. No injury. Corrected immediately. PPE compliant.", personnel:"CTR-1922", hours:"", severity:"MED", createdAt: Date.now()-3600000*8 },
-    { id:crypto.randomUUID(), logType:"subcon",    shift:"B-East",  description:"Erection sub-assembly P17A frame-72. All PPE compliant. ROMIS material issue coordinated.", personnel:"CTR-2841", hours:32, severity:"LOW", createdAt: Date.now()-3600000*3 },
-    { id:crypto.randomUUID(), logType:"toolbox",   shift:"A-Sub",   description:"Daily toolbox talk: confined space entry procedure for submarine ballast tank access.", personnel:"SUP-0441", hours:"", severity:"LOW", createdAt: Date.now()-3600000*1 },
-  ]);
+  /**
+   * Fetch all material issue events, newest first.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_materials ORDER BY logged_at DESC;
+   *
+   * Used by: renderMaterialsGrid() to build the live ROMIS issue log.
+   */
+  async getMaterials() {
+    const { data, error } = await supabase
+      .from("mdl_materials")
+      .select("*")
+      .order("logged_at", { ascending: false });
 
-  localStorage.setItem(KEYS.INIT, "1");
-  console.info("[MDL-MIS v4.0] Bootstrapped. Keys:", Object.values(KEYS).join(", "));
+    if (error) console.error("[DB_API.getMaterials]", error.message);
+    return { data: data || [], error };
+  },
+
+  /**
+   * Insert a new material issue event (ROMIS — SAP-MM Movement Type 201).
+   *
+   * SQL equivalent:
+   *   INSERT INTO mdl_materials (material, heat_no, quantity, ...) VALUES (...);
+   *
+   * @param {Object} issue - Issue fields matching the mdl_materials schema
+   */
+  async insertMaterial(issue) {
+    const { data, error } = await supabase
+      .from("mdl_materials")
+      .insert({
+        material:         issue.material,
+        heat_no:          issue.heat_no,
+        quantity:         issue.quantity,
+        project_id:       issue.project_id,
+        staging_location: issue.staging_location,
+        // logged_at defaults to NOW() in the database — no need to send it
+      })
+      .select();
+
+    if (error) console.error("[DB_API.insertMaterial]", error.message);
+    return { data, error };
+  },
+
+  // ── INVENTORY ────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch all inventory items ordered by item code.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_inventory ORDER BY item_code ASC;
+   *
+   * Items with stock_qty < min_threshold are flagged as 'LOW' by the UI.
+   */
+  async getInventory() {
+    const { data, error } = await supabase
+      .from("mdl_inventory")
+      .select("*")
+      .order("item_code", { ascending: true });
+
+    if (error) console.error("[DB_API.getInventory]", error.message);
+    return { data: data || [], error };
+  },
+
+  // ── VENDORS ──────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch all vendor master records ordered by name.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_vendors ORDER BY name ASC;
+   */
+  async getVendors() {
+    const { data, error } = await supabase
+      .from("mdl_vendors")
+      .select("*")
+      .order("name", { ascending: true });
+
+    if (error) console.error("[DB_API.getVendors]", error.message);
+    return { data: data || [], error };
+  },
+
+  // ── HSE ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch all HSE incident records, newest first.
+   *
+   * SQL equivalent:
+   *   SELECT * FROM mdl_hse ORDER BY logged_at DESC;
+   */
+  async getHSE() {
+    const { data, error } = await supabase
+      .from("mdl_hse")
+      .select("*")
+      .order("logged_at", { ascending: false });
+
+    if (error) console.error("[DB_API.getHSE]", error.message);
+    return { data: data || [], error };
+  },
+
+  /**
+   * Insert a new HSE incident or sub-contractor activity log entry.
+   *
+   * SQL equivalent:
+   *   INSERT INTO mdl_hse (log_type, shift_zone, description, ...) VALUES (...);
+   *
+   * @param {Object} entry - Incident fields matching the mdl_hse schema
+   */
+  async insertHSE(entry) {
+    const { data, error } = await supabase
+      .from("mdl_hse")
+      .insert({
+        log_type:     entry.log_type,
+        shift_zone:   entry.shift_zone,
+        description:  entry.description,
+        personnel_id: entry.personnel_id || null,
+        man_hours:    entry.man_hours    || null,
+        severity:     entry.severity,
+        // logged_at defaults to NOW() in the database
+      })
+      .select();
+
+    if (error) console.error("[DB_API.insertHSE]", error.message);
+    return { data, error };
+  },
+
+};  // END DB_API
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 4: UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Show a toast-style error banner when a Supabase query fails.
+ * This gives users clear feedback instead of a silent blank grid.
+ *
+ * @param {string} message - Error message to display
+ */
+function showDbError(message) {
+  console.error("[MDL-MIS DB Error]", message);
+  // Find or create a global error toast element
+  let toast = document.getElementById("dbErrorToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "dbErrorToast";
+    toast.style.cssText = [
+      "position:fixed", "bottom:20px", "right:20px", "z-index:9999",
+      "background:#1a1a2e", "border:1px solid #ff4d4d", "color:#ff4d4d",
+      "font-family:'IBM Plex Mono',monospace", "font-size:11px",
+      "padding:10px 16px", "max-width:400px", "box-shadow:0 4px 20px rgba(0,0,0,0.6)",
+    ].join(";");
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '<i class="fas fa-triangle-exclamation"></i> &nbsp;DB ERROR: ' + message;
+  toast.style.display = "block";
+  setTimeout(function() { if (toast) toast.style.display = "none"; }, 6000);
 }
 
-// ─── Clock ───────────────────────────────────────────────────────
-function startClock() {
-  function tick() {
-    const now = new Date();
-    document.getElementById("clockDate").textContent =
-      now.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short", year:"numeric" });
-    document.getElementById("clockTime").textContent =
-      now.toLocaleTimeString("en-IN", { hour12: false });
-  }
-  tick(); setInterval(tick, 1000);
+/**
+ * Render a loading skeleton placeholder into a container while data loads.
+ * Prevents layout shift and communicates to the user that data is fetching.
+ *
+ * @param {string} containerId - DOM element id to fill
+ * @param {string} message     - Optional custom loading text
+ */
+function showLoading(containerId, message) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<div style="padding:16px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#505a6e;text-align:center;">'
+    + '<i class="fas fa-circle-notch fa-spin" style="margin-right:8px;"></i>'
+    + (message || "Fetching from Supabase…") + "</div>";
 }
 
 function stampRefresh() {
-  const el = document.getElementById("lastRefresh");
-  if (el) el.textContent = "Refreshed: " + new Date().toLocaleTimeString("en-IN", { hour12:false });
+  var el = document.getElementById("lastRefresh");
+  if (el) el.textContent = "Refreshed: " + new Date().toLocaleTimeString("en-IN", { hour12: false });
 }
 
-// ─── Navigation ──────────────────────────────────────────────────
-const VIEWS = {
-  ess:         { el:"view-ess",        bc:"Financial Command › Executive Overview",       onEnter: renderESS        },
-  projects:    { el:"view-projects",   bc:"Project &amp; Spatial MIS › Portfolio View",   onEnter: renderProjects   },
-  supply:      { el:"view-supply",     bc:"Supply Chain &amp; Vendors › ROMIS Module",    onEnter: renderSupply     },
-  hcm:         { el:"view-hcm",        bc:"Human Capital &amp; HSE › Incident Register",  onEnter: renderHCM        },
-  compliance:  { el:"view-compliance", bc:"Indigenization &amp; CSR › Compliance Ctr.",   onEnter: renderCompliance },
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 5: RBAC ENGINE (unchanged — session metadata stays in localStorage)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const RBAC_ROLES = [
+  {
+    key:"super-admin", name:"Super Administrator", persona:"IT Systems Director",
+    icon:"fa-shield-halved", clearance:"SECRET", clsCls:"clr-secret", color:"#ff4d4d",
+    permissions:["ess","projects","supply","hcm","compliance","audit"],
+    description:"Full CRUD · All modules · Role assignments · Audit logs",
+  },
+  {
+    key:"executive", name:"Executive Director", persona:"Board Member / C-Suite",
+    icon:"fa-briefcase", clearance:"CONFIDENTIAL", clsCls:"clr-conf", color:"#f5c842",
+    permissions:["ess","projects","compliance","audit"],
+    description:"Read-only macro dashboards · Financials · Order Book · Strategic KPIs",
+  },
+  {
+    key:"project-commander", name:"Project Commander", persona:"Warship / Submarine Lead",
+    icon:"fa-anchor", clearance:"SECRET", clsCls:"clr-secret", color:"#2075ff",
+    permissions:["projects","supply","audit"],
+    description:"CRUD on assigned projects · Milestones · Material requests",
+  },
+  {
+    key:"financial-controller", name:"Financial Controller", persona:"Accounting Manager",
+    icon:"fa-chart-line", clearance:"CONFIDENTIAL", clsCls:"clr-conf", color:"#f5c842",
+    permissions:["ess","audit"],
+    description:"Financial ledger · Cash flow · Vendor payments · Budget approvals",
+  },
+  {
+    key:"supply-officer", name:"Supply Chain Officer", persona:"Procurement Lead",
+    icon:"fa-boxes-stacked", clearance:"RESTRICTED", clsCls:"clr-rest", color:"#00e5a0",
+    permissions:["supply","audit"],
+    description:"Vendor database · Inventory · ROMIS · Indigenization data",
+  },
+  {
+    key:"floor-supervisor", name:"Floor Supervisor", persona:"Yard Master / Foreman",
+    icon:"fa-hard-hat", clearance:"RESTRICTED", clsCls:"clr-rest", color:"#00e5a0",
+    permissions:["hcm","audit"],
+    description:"Worker attendance · Slipway allocation · HIRA safety incident reporting",
+  },
+];
+
+const SIDEBAR_MODULES = [
+  { view:"ess",        icon:"fa-satellite-dish", title:"Financial Command",      sub:"SAP-FI/CO · Supabase"        },
+  { view:"projects",   icon:"fa-anchor",          title:"Project & Spatial MIS", sub:"SAP-PS · Supabase"           },
+  { view:"supply",     icon:"fa-boxes-stacked",   title:"Supply Chain & Vendors",sub:"SAP-MM · Supabase"           },
+  { view:"hcm",        icon:"fa-hard-hat",        title:"Human Capital & HSE",   sub:"SAP-HCM · Supabase"         },
+  { view:"compliance", icon:"fa-flag",            title:"Indigenization & CSR",  sub:"Compliance · Static"        },
+  { view:"audit",      icon:"fa-scroll",          title:"Audit Log",             sub:"RBAC · Session Storage"     },
+];
+
+let activeRole = null;
+
+// ─── Audit logger (session-scoped, stays in localStorage) ─────────────────
+function logAudit(action, detail) {
+  var entry = {
+    id:        crypto.randomUUID(),
+    ts:        Date.now(),
+    userId:    activeRole ? activeRole.name : "SYSTEM",
+    role:      activeRole ? activeRole.key  : "—",
+    clearance: activeRole ? activeRole.clearance : "—",
+    action:    action,
+    detail:    detail || "",
+  };
+  Session.appendAudit(entry);
+  updateAuditBadge();
+  if (currentView === "audit") renderAuditGrid();
+}
+
+function updateAuditBadge() {
+  var el = document.getElementById("auditCount");
+  if (el) el.textContent = Session.getAudit().length + " EVENTS";
+}
+
+// ─── RBAC Overlay ──────────────────────────────────────────────────────────
+function buildRBACOverlay() {
+  var container = document.getElementById("rbacRoles");
+  if (!container) return;
+  container.innerHTML = "";
+
+  RBAC_ROLES.forEach(function(role) {
+    var btn = document.createElement("button");
+    btn.className = "rbac-role-btn";
+    btn.type = "button";
+
+    var iconDiv = document.createElement("div");
+    iconDiv.className = "rbac-role-icon";
+    iconDiv.style.cssText = "color:" + role.color + ";background:rgba(0,0,0,0.2);border:1px solid " + role.color + "44";
+    iconDiv.innerHTML = '<i class="fas ' + role.icon + '"></i>';
+
+    var textDiv = document.createElement("div");
+    textDiv.style.cssText = "flex:1;text-align:left";
+
+    var nameSpan = document.createElement("span");
+    nameSpan.className = "rbac-role-name";
+    nameSpan.textContent = role.name;
+
+    var descSpan = document.createElement("span");
+    descSpan.className = "rbac-role-desc";
+    descSpan.textContent = role.persona + " · " + role.description;
+
+    textDiv.appendChild(nameSpan);
+    textDiv.appendChild(descSpan);
+
+    var clrSpan = document.createElement("span");
+    clrSpan.className = "rbac-role-clearance " + role.clsCls;
+    clrSpan.textContent = role.clearance;
+
+    btn.appendChild(iconDiv);
+    btn.appendChild(textDiv);
+    btn.appendChild(clrSpan);
+
+    (function(r) {
+      btn.addEventListener("click", function() { selectRole(r); });
+    })(role);
+
+    container.appendChild(btn);
+  });
+}
+
+function selectRole(role) {
+  activeRole = role;
+  Session.set({ roleKey: role.key, ts: Date.now() });
+
+  var overlay = document.getElementById("rbacOverlay");
+  var shell   = document.getElementById("appShell");
+  if (overlay) overlay.style.display = "none";
+  if (shell)   shell.style.display   = "flex";
+
+  startClock();
+  buildSidebar();
+  updateUserChip();
+  buildSwitcherDropdown();
+  wireNavigation();
+  wireProjectModal();
+  wireMaterialLogger();
+  wireSeveritySelector();
+  wireHSEForm();
+  wireAccountSwitcher();
+
+  logAudit("LOGIN", "Role: " + role.name + " · Clearance: " + role.clearance + " · DB: Supabase");
+
+  var firstView = role.permissions.filter(function(p) { return p !== "audit"; })[0] || "audit";
+  setActiveView(firstView);
+}
+
+// ─── Account Switcher ──────────────────────────────────────────────────────
+function buildSwitcherDropdown() {
+  var list = document.getElementById("switcherRoleList");
+  if (!list) return;
+  list.innerHTML = "";
+  RBAC_ROLES.forEach(function(role) {
+    var item = document.createElement("div");
+    item.className = "switcher-role-item" + (activeRole && role.key === activeRole.key ? " active-role" : "");
+    var icon = document.createElement("i");
+    icon.className = "fas " + role.icon + " sw-role-icon";
+    icon.style.color = role.color;
+    var textDiv = document.createElement("div");
+    var nameDiv = document.createElement("div"); nameDiv.className = "sw-role-name"; nameDiv.textContent = role.name;
+    var subDiv  = document.createElement("div"); subDiv.className  = "sw-role-sub";  subDiv.textContent  = role.persona;
+    textDiv.appendChild(nameDiv); textDiv.appendChild(subDiv);
+    item.appendChild(icon); item.appendChild(textDiv);
+    if (activeRole && role.key === activeRole.key) {
+      var badge = document.createElement("span"); badge.className = "sw-active-badge"; badge.textContent = "ACTIVE";
+      item.appendChild(badge);
+    }
+    (function(r) { item.addEventListener("click", function() { switchRole(r); }); })(role);
+    list.appendChild(item);
+  });
+}
+
+function switchRole(newRole) {
+  if (activeRole && newRole.key === activeRole.key) { toggleSwitcher(false); return; }
+  var prev = activeRole ? activeRole.name : "none";
+  activeRole = newRole;
+  Session.set({ roleKey: newRole.key, ts: Date.now() });
+  logAudit("ROLE_SWITCH", "From: " + prev + " → To: " + newRole.name);
+  updateUserChip(); buildSidebar(); buildSwitcherDropdown(); toggleSwitcher(false);
+  // Reset grid instances so they are re-created with fresh data for the new view
+  resetGridInstances();
+  currentView = null;
+  var firstView = newRole.permissions.filter(function(p) { return p !== "audit"; })[0] || "audit";
+  setActiveView(firstView);
+}
+
+function updateUserChip() {
+  if (!activeRole) return;
+  var els = {
+    userNameDisplay: activeRole.name.toUpperCase(),
+    userRoleDisplay: activeRole.clearance + " CLEARANCE",
+    metaRole:        activeRole.name,
+    metaClearance:   activeRole.clearance + " · " + activeRole.persona,
+  };
+  Object.keys(els).forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.textContent = els[id];
+  });
+  var iconEl = document.getElementById("userAvatarIcon");
+  if (iconEl) iconEl.innerHTML = '<i class="fas ' + activeRole.icon + '"></i>';
+}
+
+var switcherWired = false;
+function wireAccountSwitcher() {
+  if (switcherWired) return; switcherWired = true;
+  var btn      = document.getElementById("userChipBtn");
+  var dropdown = document.getElementById("switcherDropdown");
+  var auditBtn = document.getElementById("auditLogBtn");
+  if (btn) btn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    toggleSwitcher(dropdown && !dropdown.classList.contains("hidden") ? false : true);
+  });
+  if (auditBtn) auditBtn.addEventListener("click", function() { toggleSwitcher(false); setActiveView("audit"); });
+  document.addEventListener("click", function() { toggleSwitcher(false); });
+  if (dropdown) dropdown.addEventListener("click", function(e) { e.stopPropagation(); });
+}
+
+function toggleSwitcher(open) {
+  var dropdown = document.getElementById("switcherDropdown");
+  var chevron  = document.getElementById("userChevron");
+  if (!dropdown) return;
+  if (open) { dropdown.classList.remove("hidden"); } else { dropdown.classList.add("hidden"); }
+  if (chevron) chevron.classList.toggle("open", open);
+}
+
+function buildSidebar() {
+  var nav = document.getElementById("sidebarNav");
+  if (!nav || !activeRole) return;
+  nav.innerHTML = "";
+  SIDEBAR_MODULES.forEach(function(mod) {
+    if (activeRole.permissions.indexOf(mod.view) === -1) return;
+    var el = document.createElement("div"); el.className = "sidebar-item"; el.dataset.view = mod.view;
+    el.innerHTML = '<i class="fas ' + mod.icon + '"></i>'
+      + '<div class="sidebar-item-text"><span class="sidebar-item-title">' + mod.title + '</span>'
+      + '<span class="sidebar-item-sub">' + mod.sub + '</span></div>'
+      + '<div class="sidebar-indicator"></div>';
+    (function(v, t) { el.addEventListener("click", function() { logAudit("NAV", t); setActiveView(v); }); })(mod.view, mod.title);
+    nav.appendChild(el);
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 6: NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VIEW_META = {
+  ess:        { bc:["Financial Command","Executive Overview"],      onEnter: renderESS       },
+  projects:   { bc:["Project & Spatial MIS","Portfolio View"],     onEnter: renderProjects  },
+  supply:     { bc:["Supply Chain & Vendors","ROMIS Module"],      onEnter: renderSupply    },
+  hcm:        { bc:["Human Capital & HSE","Incident Register"],    onEnter: renderHCM       },
+  compliance: { bc:["Indigenization & CSR","Compliance Centre"],   onEnter: function(){}    },
+  audit:      { bc:["Security","RBAC Audit Log"],                  onEnter: renderAuditGrid },
 };
 
-let currentView = null;
+var currentView = null;
 
 function setActiveView(viewKey) {
+  if (activeRole && activeRole.permissions.indexOf(viewKey) === -1) {
+    setActiveView(activeRole.permissions[0] || "audit"); return;
+  }
   if (currentView === viewKey) return;
   currentView = viewKey;
 
-  Object.keys(VIEWS).forEach(k => {
-    const el = document.getElementById(VIEWS[k].el);
-    if (el) el.classList.toggle("hidden", k !== viewKey);
+  Object.keys(VIEW_META).forEach(function(k) {
+    var el = document.getElementById("view-" + k);
+    if (el) { if (k === viewKey) el.classList.remove("hidden"); else el.classList.add("hidden"); }
   });
 
-  document.querySelectorAll(".sidebar-item").forEach(el => {
+  document.querySelectorAll(".sidebar-item").forEach(function(el) {
     el.classList.toggle("active", el.dataset.view === viewKey);
   });
 
-  const bc = document.getElementById("breadcrumb");
-  if (bc) {
-    const parts = VIEWS[viewKey].bc.split(" › ");
-    bc.innerHTML = `<span>MDL HQ</span><i class="fas fa-angle-right"></i>` +
-      parts.map((p,i) => i < parts.length-1
-        ? `<span>${p}</span><i class="fas fa-angle-right"></i>`
-        : `<span>${p}</span>`).join("");
+  var bc = document.getElementById("breadcrumb");
+  if (bc && VIEW_META[viewKey]) {
+    var parts = VIEW_META[viewKey].bc;
+    bc.innerHTML = "<span>MDL HQ</span><i class=\"fas fa-angle-right\"></i>"
+      + parts.map(function(p, i) {
+          return "<span>" + p + "</span>" + (i < parts.length - 1 ? "<i class=\"fas fa-angle-right\"></i>" : "");
+        }).join("");
   }
 
-  if (VIEWS[viewKey].onEnter) VIEWS[viewKey].onEnter();
+  if (VIEW_META[viewKey] && VIEW_META[viewKey].onEnter) VIEW_META[viewKey].onEnter();
   stampRefresh();
 }
 
+var navWired = false;
 function wireNavigation() {
-  document.querySelectorAll(".sidebar-item").forEach(el => {
-    el.addEventListener("click", () => setActiveView(el.dataset.view));
-  });
-
-  const toggle  = document.getElementById("sidebarToggle");
-  const sidebar = document.getElementById("sidebar");
+  if (navWired) return; navWired = true;
+  var toggle  = document.getElementById("sidebarToggle");
+  var sidebar = document.getElementById("sidebar");
   if (toggle && sidebar) {
-    toggle.addEventListener("click", () => {
+    toggle.addEventListener("click", function() {
       if (window.innerWidth < 900) sidebar.classList.toggle("mobile-open");
       else sidebar.classList.toggle("collapsed");
     });
   }
-
-  document.getElementById("refreshBtn")?.addEventListener("click", () => {
-    const btn = document.getElementById("refreshBtn");
+  document.getElementById("refreshBtn")?.addEventListener("click", function() {
+    var btn = document.getElementById("refreshBtn");
     btn.classList.add("spinning");
-    setTimeout(() => {
+    // Reset grids so data is fully re-fetched from Supabase on refresh
+    resetGridInstances();
+    setTimeout(function() {
       btn.classList.remove("spinning");
-      if (currentView) VIEWS[currentView].onEnter();
+      if (currentView && VIEW_META[currentView] && VIEW_META[currentView].onEnter) {
+        VIEW_META[currentView].onEnter();
+      }
       stampRefresh();
     }, 600);
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MODULE 1 · ESS — Financial Command (SAP-FI/CO + SAP-BW)
-// ═══════════════════════════════════════════════════════════════════
-let chartRevenue = null;
-let chartIndi    = null;
+function startClock() {
+  function tick() {
+    var now = new Date();
+    var d = document.getElementById("clockDate"); var t = document.getElementById("clockTime");
+    if (d) d.textContent = now.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short", year:"numeric" });
+    if (t) t.textContent = now.toLocaleTimeString("en-IN", { hour12:false });
+  }
+  tick(); setInterval(tick, 1000);
+}
 
-function renderESS() {
-  const data = DB.get(KEYS.STRATEGIC, null);
-  if (!data) return;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 7: GRID INSTANCE MANAGEMENT
+//
+// Grid.js instances are stored at module scope. They are set to null and
+// re-created whenever the user switches roles or presses Refresh — this
+// forces a fresh DOM render and avoids stale data in the grids.
+// ═══════════════════════════════════════════════════════════════════════════
+
+var chartRevenue       = null;
+var chartIndi          = null;
+var projectsGridInst   = null;
+var inventoryGridInst  = null;
+var vendorGridInst     = null;
+var materialsGridInst  = null;
+var leadershipGridInst = null;
+var hseGridInst        = null;
+var auditGridInst      = null;
+
+/**
+ * Destroy all Grid.js instances and set their references to null.
+ * Called on role switch and manual refresh to force complete re-render.
+ */
+function resetGridInstances() {
+  [projectsGridInst, inventoryGridInst, vendorGridInst,
+   materialsGridInst, leadershipGridInst, hseGridInst, auditGridInst]
+    .forEach(function(inst) { /* Grid.js has no destroy() in mermaid theme — null ref is sufficient */ });
+  projectsGridInst = inventoryGridInst = vendorGridInst =
+  materialsGridInst = leadershipGridInst = hseGridInst = auditGridInst = null;
+  if (chartRevenue) { chartRevenue.destroy(); chartRevenue = null; }
+  if (chartIndi)    { chartIndi.destroy();    chartIndi    = null; }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 8: ESS — Financial Command (SAP-FI/CO + SAP-BW)
+//
+// Migration note: renderESS() is now async. It awaits DB_API.getFinancials()
+// which makes a single HTTP GET to the Supabase PostgREST endpoint.
+// The returned data array replaces the old DB.get(KEYS.STRATEGIC) call.
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function renderESS() {
+  // Fetch all fiscal year rows from Supabase.
+  // API call: GET https://<project>.supabase.co/rest/v1/mdl_financials?select=*&order=fiscal_year.asc
+  const { data: rows, error } = await DB_API.getFinancials();
+  if (error) { showDbError(error.message); return; }
+  if (!rows || rows.length === 0) { showDbError("No financial data found in mdl_financials table."); return; }
+
+  // The last row is the most recent fiscal year (FY25 in the seed data)
+  const latestRow = rows[rows.length - 1];
 
   Chart.defaults.color       = "#8a94a6";
   Chart.defaults.borderColor = "rgba(255,255,255,0.05)";
   Chart.defaults.font.family = "'IBM Plex Mono', monospace";
   Chart.defaults.font.size   = 10;
 
-  const revCtx = document.getElementById("revenueChart");
+  // ── Revenue + PAT dual-axis chart ────────────────────────────────────────
+  // Map the Supabase rows to the arrays Chart.js expects.
+  var labels   = rows.map(function(r) { return r.fiscal_year; });
+  var revenues = rows.map(function(r) { return parseFloat(r.revenue_cr);  });
+  var pats     = rows.map(function(r) { return parseFloat(r.pat_cr); });
+
+  var revCtx = document.getElementById("revenueChart");
   if (revCtx) {
     if (chartRevenue) chartRevenue.destroy();
     chartRevenue = new Chart(revCtx, {
       data: {
-        labels: ["FY21","FY22","FY23","FY24","FY25"],
+        labels: labels,
         datasets: [
           {
             type:"bar", label:"Revenue (₹ Cr)", yAxisID:"yRev", order:2,
-            data: [data.revenue.fy21,data.revenue.fy22,data.revenue.fy23,data.revenue.fy24,data.revenue.fy25],
+            data: revenues,
             backgroundColor:"rgba(32,117,255,0.50)", borderColor:"#2075ff", borderWidth:1,
           },
           {
             type:"line", label:"PAT (₹ Cr)", yAxisID:"yPat", order:1,
-            data: [data.pat.fy21,data.pat.fy22,data.pat.fy23,data.pat.fy24,data.pat.fy25],
+            data: pats,
             borderColor:"#00e5a0", backgroundColor:"rgba(0,229,160,0.07)",
             pointBackgroundColor:"#00e5a0", pointRadius:4, pointHoverRadius:6,
             borderWidth:2, fill:true, tension:0.35,
@@ -230,414 +802,601 @@ function renderESS() {
         ],
       },
       options: {
-        responsive: true, maintainAspectRatio: true,
-        interaction: { mode:"index", intersect:false },
+        responsive:true, maintainAspectRatio:true,
+        interaction:{ mode:"index", intersect:false },
         plugins: {
-          legend: { position:"top", align:"end", labels:{ boxWidth:10, padding:14, font:{size:10} } },
-          tooltip: {
+          legend:{ position:"top", align:"end", labels:{ boxWidth:10, padding:14, font:{size:10} } },
+          tooltip:{
             backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1, padding:10,
-            callbacks: { label: ctx => ` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString("en-IN")} Cr` },
+            callbacks:{ label: function(ctx) { return " " + ctx.dataset.label + ": ₹" + ctx.parsed.y.toLocaleString("en-IN") + " Cr"; } },
           },
         },
         scales: {
-          yRev: { type:"linear", position:"left",  grid:{ color:"rgba(255,255,255,0.04)" }, ticks:{ callback:v=>"₹"+(v/1000).toFixed(0)+"k" } },
-          yPat: { type:"linear", position:"right", grid:{ drawOnChartArea:false }, ticks:{ callback:v=>"₹"+v } },
-          x:    { grid:{ color:"rgba(255,255,255,0.04)" } },
+          yRev:{ type:"linear", position:"left",  grid:{ color:"rgba(255,255,255,0.04)" }, ticks:{ callback: function(v) { return "₹" + (v/1000).toFixed(0) + "k"; } } },
+          yPat:{ type:"linear", position:"right", grid:{ drawOnChartArea:false }, ticks:{ callback: function(v) { return "₹" + v; } } },
+          x:   { grid:{ color:"rgba(255,255,255,0.04)" } },
         },
       },
     });
   }
 
-  const indiCtx = document.getElementById("indiChart");
+  // ── Indigenization doughnut ───────────────────────────────────────────────
+  // Use indigenous_pct and import_pct from the latest (FY25) row.
+  var indiCtx = document.getElementById("indiChart");
   if (indiCtx) {
     if (chartIndi) chartIndi.destroy();
     chartIndi = new Chart(indiCtx, {
       type:"doughnut",
-      data: {
+      data:{
         labels:["Make in India","Imports"],
-        datasets:[{ data:[data.indigenization.domestic,data.indigenization.imports], backgroundColor:["#2075ff","#2d3a55"], borderColor:["#2075ff","#3a4560"], borderWidth:2, hoverOffset:6 }],
+        datasets:[{
+          data:[parseFloat(latestRow.indigenous_pct), parseFloat(latestRow.import_pct)],
+          backgroundColor:["#2075ff","#2d3a55"], borderColor:["#2075ff","#3a4560"], borderWidth:2, hoverOffset:6,
+        }],
       },
-      options: {
+      options:{
         responsive:true, cutout:"65%",
-        plugins: {
+        plugins:{
           legend:{ display:false },
-          tooltip: { backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1, callbacks:{ label:ctx=>` ${ctx.label}: ${ctx.parsed}%` } },
+          tooltip:{
+            backgroundColor:"#1a2235", borderColor:"#2075ff", borderWidth:1,
+            callbacks:{ label: function(ctx) { return " " + ctx.label + ": " + ctx.parsed + "%"; } },
+          },
         },
       },
     });
+    // Update the donut centre label with live data
+    var donutPctEl = document.getElementById("donutPct");
+    if (donutPctEl) donutPctEl.textContent = latestRow.indigenous_pct + "%";
   }
+
+  logAudit("VIEW_ACCESS", "Financial Command (ESS) · Source: Supabase mdl_financials");
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MODULE 2 · PROJECTS — SAP-PS Project Portfolio
-// ═══════════════════════════════════════════════════════════════════
-let projectsGrid = null;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 9: PROJECTS — SAP-PS Portfolio Grid
+//
+// Migration note: renderProjects() is now async.
+// Was: var data = DB.get(KEYS.PROJECTS, []);
+// Now: const { data } = await DB_API.getProjects();
+// The field names have changed to match the PostgreSQL column names:
+//   wbs_code, contract_value_cr, remaining_cr, indigenization_pct
+// ═══════════════════════════════════════════════════════════════════════════
 
 function spiTag(spi) {
-  if (spi >= 1.0) return `<span class="cell-positive">▲ ${spi.toFixed(2)}</span>`;
-  if (spi >= 0.9) return `<span class="cell-neutral">◆ ${spi.toFixed(2)}</span>`;
-  return `<span class="cell-negative">▼ ${spi.toFixed(2)}</span>`;
+  var v = parseFloat(spi);
+  if (v >= 1.0) return '<span class="cell-positive">&#9650; ' + v.toFixed(2) + '</span>';
+  if (v >= 0.9) return '<span class="cell-neutral">&#9670; '  + v.toFixed(2) + '</span>';
+  return '<span class="cell-negative">&#9660; ' + v.toFixed(2) + '</span>';
 }
 
 function statusTag(s) {
-  const m = { "On Track":"tag-on-track","Slight Overrun":"tag-overrun","Managed Overrun":"tag-managed","Underrun":"tag-underrun","On Hold":"tag-hold" };
-  return `<span class="cell-tag ${m[s]||"tag-hold"}">${s.toUpperCase()}</span>`;
+  var map = { "On Track":"tag-on-track","Slight Overrun":"tag-overrun","Managed Overrun":"tag-managed","Underrun":"tag-underrun","On Hold":"tag-hold" };
+  return '<span class="cell-tag ' + (map[s] || "tag-hold") + '">' + s.toUpperCase() + '</span>';
 }
 
-function renderProjects() {
-  const container = document.getElementById("projectsGrid");
-  if (!container) return;
-  const data = DB.get(KEYS.PROJECTS, []);
-  const rows = data.map(p => [
-    p.id,
-    p.description,
-    "₹" + p.contractValue.toLocaleString("en-IN") + " Cr",
-    "₹" + p.remaining.toLocaleString("en-IN") + " Cr",
-    (((p.contractValue - p.remaining) / p.contractValue)*100).toFixed(1) + "%",
-    gridjs.html(spiTag(p.spi)),
-    (p.indigenization || "—") + "%",
-    gridjs.html(statusTag(p.status)),
-  ]);
-  const cfg = {
-    columns: [
-      { name:"WBS ID",       width:"75px"  },
-      { name:"Programme",    width:"270px" },
-      { name:"Contracted",   width:"120px" },
-      { name:"Remaining",    width:"110px" },
-      { name:"% Complete",   width:"90px"  },
-      { name:"SPI",          width:"75px"  },
-      { name:"Indi. %",      width:"70px"  },
-      { name:"Status",       width:"140px" },
+async function renderProjects() {
+  showLoading("projectsGrid", "Loading order book from Supabase…");
+
+  // Fetch all WBS project records from Supabase.
+  // API call: GET /rest/v1/mdl_projects?select=*&order=contract_value_cr.desc
+  const { data, error } = await DB_API.getProjects();
+  if (error) { showDbError(error.message); return; }
+
+  // Map Supabase column names (snake_case) to Grid.js row arrays
+  var rows = data.map(function(p) {
+    var contractVal  = parseFloat(p.contract_value_cr)  || 0;
+    var remainingVal = parseFloat(p.remaining_cr)        || 0;
+    var pctDone      = contractVal > 0 ? ((contractVal - remainingVal) / contractVal * 100).toFixed(1) : "0.0";
+
+    return [
+      p.wbs_code,
+      p.description,
+      "₹" + contractVal.toLocaleString("en-IN")  + " Cr",
+      "₹" + remainingVal.toLocaleString("en-IN") + " Cr",
+      pctDone + "%",
+      gridjs.html(spiTag(p.spi)),
+      (p.indigenization_pct || "—") + "%",
+      gridjs.html(statusTag(p.status)),
+    ];
+  });
+
+  var cfg = {
+    columns:[
+      {name:"WBS ID",     width:"75px" },
+      {name:"Programme",  width:"255px"},
+      {name:"Contracted", width:"120px"},
+      {name:"Remaining",  width:"110px"},
+      {name:"% Done",     width:"75px" },
+      {name:"SPI",        width:"75px" },
+      {name:"Indi. %",    width:"65px" },
+      {name:"Status",     width:"140px"},
     ],
-    data: rows, sort:true, search:{ enabled:true }, pagination:{ enabled:true, limit:6 },
+    data:rows, sort:true, search:{ enabled:true }, pagination:{ enabled:true, limit:6 },
   };
-  if (!projectsGrid) { projectsGrid = new gridjs.Grid(cfg); projectsGrid.render(container); }
-  else projectsGrid.updateConfig(cfg).forceRender();
-  document.getElementById("projCount").textContent = data.length + " ACTIVE PROGRAMMES";
+
+  var container = document.getElementById("projectsGrid");
+  if (!container) return;
+
+  if (!projectsGridInst) {
+    projectsGridInst = new gridjs.Grid(cfg);
+    projectsGridInst.render(container);
+  } else {
+    projectsGridInst.updateConfig(cfg).forceRender();
+  }
+
+  var badge = document.getElementById("projCount");
+  if (badge) badge.textContent = data.length + " ACTIVE PROGRAMMES";
+  logAudit("VIEW_ACCESS", "Project Portfolio (SAP-PS) · Source: Supabase mdl_projects");
 }
 
-// ─── Add Project Modal ──────────────────────────────────────────
+// ─── Add Project Modal ──────────────────────────────────────────────────────
+var projModalWired = false;
 function wireProjectModal() {
-  const modal     = document.getElementById("addProjectModal");
-  const openBtn   = document.getElementById("openAddProjectModal");
-  const closeBtn  = document.getElementById("closeProjectModal");
-  const cancelBtn = document.getElementById("cancelProjectModal");
-  const saveBtn   = document.getElementById("saveProjectBtn");
-  const msg       = document.getElementById("projModalMsg");
+  if (projModalWired) return; projModalWired = true;
+
+  var modal     = document.getElementById("addProjectModal");
+  var openBtn   = document.getElementById("openAddProjectModal");
+  var closeBtn  = document.getElementById("closeProjectModal");
+  var cancelBtn = document.getElementById("cancelProjectModal");
+  var saveBtn   = document.getElementById("saveProjectBtn");
+  var msg       = document.getElementById("projModalMsg");
   if (!modal) return;
 
   function closeModal() {
     modal.classList.add("hidden");
-    msg.classList.add("hidden");
-    ["mProjId","mProjDesc","mProjValue","mProjBalance","mProjSpi","mProjIndi"].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = "";
+    if (msg) msg.classList.add("hidden");
+    ["mProjId","mProjDesc","mProjValue","mProjBalance","mProjSpi","mProjIndi"].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = "";
     });
   }
 
-  openBtn?.addEventListener("click",   () => modal.classList.remove("hidden"));
-  closeBtn?.addEventListener("click",  closeModal);
-  cancelBtn?.addEventListener("click", closeModal);
-  modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+  if (openBtn)   openBtn.addEventListener("click",   function() { modal.classList.remove("hidden"); });
+  if (closeBtn)  closeBtn.addEventListener("click",  closeModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+  modal.addEventListener("click", function(e) { if (e.target === modal) closeModal(); });
 
-  saveBtn?.addEventListener("click", () => {
-    const id    = document.getElementById("mProjId")?.value.trim();
-    const desc  = document.getElementById("mProjDesc")?.value.trim();
-    const val   = parseFloat(document.getElementById("mProjValue")?.value);
-    const bal   = parseFloat(document.getElementById("mProjBalance")?.value);
-    const spi   = parseFloat(document.getElementById("mProjSpi")?.value||"1.00");
-    const indi  = parseInt(document.getElementById("mProjIndi")?.value||"0");
-    const status= document.getElementById("mProjStatus")?.value;
-    if (!id || !desc || isNaN(val) || isNaN(bal)) return;
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async function() {
+      var wbs_code     = (document.getElementById("mProjId")?.value    || "").trim();
+      var description  = (document.getElementById("mProjDesc")?.value  || "").trim();
+      var contract_val = parseFloat(document.getElementById("mProjValue")?.value   || "");
+      var remaining    = parseFloat(document.getElementById("mProjBalance")?.value || "");
+      var spi          = parseFloat(document.getElementById("mProjSpi")?.value     || "1.00");
+      var indi         = parseInt(document.getElementById("mProjIndi")?.value      || "0", 10);
+      var status       = document.getElementById("mProjStatus")?.value || "On Track";
 
-    // SAP-PS: BAPI_PROJECT_MAINTAIN — append WBS element
-    const projects = DB.get(KEYS.PROJECTS, []);
-    projects.push({ id, description:desc, contractValue:val, remaining:bal, spi, indigenization:indi, status, createdAt:Date.now() });
-    DB.set(KEYS.PROJECTS, projects);
-    renderProjects();
-    msg.classList.remove("hidden");
-    setTimeout(() => { msg.classList.add("hidden"); closeModal(); }, 1500);
-  });
+      if (!wbs_code || !description || isNaN(contract_val) || isNaN(remaining)) return;
+
+      // Disable button during async call to prevent double-submits
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
+      // INSERT into Supabase.
+      // API call: POST /rest/v1/mdl_projects  (Content-Type: application/json)
+      const { error } = await DB_API.insertProject({
+        wbs_code:           wbs_code,
+        description:        description,
+        contract_value_cr:  contract_val,
+        remaining_cr:       remaining,
+        spi:                spi,
+        indigenization_pct: indi,
+        status:             status,
+      });
+
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fas fa-check"></i> SAVE TO SAP-PS';
+
+      if (error) { showDbError("Insert failed: " + error.message); return; }
+
+      logAudit("DATA_CREATE", "New WBS: " + wbs_code + " · ₹" + contract_val + " Cr → Supabase");
+
+      if (msg) msg.classList.remove("hidden");
+
+      // Re-fetch all projects from Supabase to refresh the grid with the new row
+      projectsGridInst = null;
+      await renderProjects();
+
+      setTimeout(function() { if (msg) msg.classList.add("hidden"); closeModal(); }, 1500);
+    });
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MODULE 3 · SUPPLY — SAP-MM Materials + ROMIS + Vendors
-// ═══════════════════════════════════════════════════════════════════
-let inventoryGrid = null;
-let vendorGrid    = null;
-let materialsGrid = null;
 
-function renderSupply() {
-  const inventory = DB.get(KEYS.INVENTORY, []);
-  const vendors   = DB.get(KEYS.VENDORS, []);
-  const materials = DB.get(KEYS.MATERIALS, []);
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 10: SUPPLY CHAIN — SAP-MM (Inventory + ROMIS + Vendors)
+//
+// Migration note: renderSupply() is now async. Three parallel Supabase
+// queries run via Promise.all() to fetch inventory, vendors, and materials
+// simultaneously rather than sequentially — this halves the total wait time.
+// ═══════════════════════════════════════════════════════════════════════════
 
-  // KPIs
-  const low = inventory.filter(i => i.status === "LOW").length;
-  const exp = vendors.filter(v => (v.regExpiry - Date.now()) < 86400000*90).length;
-  document.getElementById("kpi-vendors").textContent     = vendors.length;
-  document.getElementById("kpi-mat-count").textContent   = materials.length;
-  document.getElementById("kpi-reorders").textContent    = low;
-  document.getElementById("kpi-expiring").textContent    = exp;
+async function renderSupply() {
+  // Run all three supply-chain queries in parallel.
+  // Promise.all() fires all three HTTP GETs simultaneously and waits for all.
+  // If fetched sequentially this would be ~3× slower.
+  const [invResult, vendResult, matResult] = await Promise.all([
+    DB_API.getInventory(),
+    DB_API.getVendors(),
+    DB_API.getMaterials(),
+  ]);
 
-  // Inventory grid
-  const invContainer = document.getElementById("inventoryGrid");
-  if (invContainer) {
-    const invRows = inventory.map(i => [
-      i.code,
-      i.description,
-      gridjs.html(i.status==="LOW"
-        ? `<span class="stock-low">⚠ ${i.stock} ${i.unit}</span>`
-        : `${i.stock} ${i.unit}`),
-      i.minThreshold + " " + i.unit,
-      "₹" + i.unitPrice.toLocaleString("en-IN"),
-      i.vendorId,
-    ]);
-    const invCfg = {
-      columns:[
-        { name:"Item Code",    width:"110px" },
-        { name:"Description",  width:"220px" },
-        { name:"Stock",        width:"90px"  },
-        { name:"Min Threshold",width:"110px" },
-        { name:"Unit Price",   width:"100px" },
-        { name:"Vendor",       width:"100px" },
-      ],
+  if (invResult.error)  { showDbError("Inventory: " + invResult.error.message);  }
+  if (vendResult.error) { showDbError("Vendors: "   + vendResult.error.message);  }
+  if (matResult.error)  { showDbError("Materials: " + matResult.error.message);  }
+
+  var inventory  = invResult.data  || [];
+  var vendors    = vendResult.data || [];
+  var materials  = matResult.data  || [];
+
+  // ── Supply KPI strip ─────────────────────────────────────────────────────
+  var today         = new Date();
+  var ninetyDaysMs  = 90 * 24 * 60 * 60 * 1000;
+  var lowStockCount = inventory.filter(function(i) { return parseFloat(i.stock_qty) < parseFloat(i.min_threshold); }).length;
+  var expiringCount = vendors.filter(function(v) {
+    if (!v.reg_expiry) return false;
+    return (new Date(v.reg_expiry) - today) < ninetyDaysMs;
+  }).length;
+
+  var setKpi = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  setKpi("kpi-vendors",    vendors.length);
+  setKpi("kpi-mat-count",  materials.length);
+  setKpi("kpi-reorders",   lowStockCount);
+  setKpi("kpi-expiring",   expiringCount);
+
+  // ── Inventory grid ────────────────────────────────────────────────────────
+  var invC = document.getElementById("inventoryGrid");
+  if (invC && inventory.length > 0) {
+    var invRows = inventory.map(function(i) {
+      var isLow    = parseFloat(i.stock_qty) < parseFloat(i.min_threshold);
+      var stockHtml = isLow
+        ? '<span class="stock-low">&#9888; ' + i.stock_qty + " " + i.unit + "</span>"
+        : i.stock_qty + " " + i.unit;
+      return [i.item_code, i.description, gridjs.html(stockHtml), i.min_threshold + " " + i.unit,
+              "₹" + parseFloat(i.unit_price_inr).toLocaleString("en-IN"), i.vendor_id || "—"];
+    });
+    var invCfg = {
+      columns:[{name:"Item Code",width:"110px"},{name:"Description",width:"220px"},{name:"Stock",width:"90px"},
+               {name:"Min Threshold",width:"110px"},{name:"Unit Price",width:"100px"},{name:"Vendor",width:"100px"}],
       data:invRows, sort:true, pagination:{ enabled:true, limit:5 },
     };
-    if (!inventoryGrid) { inventoryGrid = new gridjs.Grid(invCfg); inventoryGrid.render(invContainer); }
-    else inventoryGrid.updateConfig(invCfg).forceRender();
+    if (!inventoryGridInst) { inventoryGridInst = new gridjs.Grid(invCfg); inventoryGridInst.render(invC); }
+    else inventoryGridInst.updateConfig(invCfg).forceRender();
   }
 
-  // Vendor grid
-  const vContainer = document.getElementById("vendorGrid");
-  if (vContainer) {
-    const vRows = vendors.map(v => {
-      const daysToExp = Math.ceil((v.regExpiry - Date.now()) / 86400000);
-      const expLabel = daysToExp < 90
-        ? gridjs.html(`<span class="cell-negative">⚠ ${daysToExp}d</span>`)
-        : gridjs.html(`<span>${daysToExp}d</span>`);
-      return [
-        v.id, v.name, v.category, v.material,
-        gridjs.html(v.greenChannel ? `<span class="green-channel">✔ GREEN</span>` : "—"),
-        gridjs.html(v.emdExempt    ? `<span class="emd-exempt">✔ EXEMPT</span>`  : "—"),
-        expLabel,
-      ];
+  // ── Vendor grid ───────────────────────────────────────────────────────────
+  var vC = document.getElementById("vendorGrid");
+  if (vC && vendors.length > 0) {
+    var vRows = vendors.map(function(v) {
+      var expDate  = v.reg_expiry ? new Date(v.reg_expiry) : null;
+      var daysLeft = expDate ? Math.ceil((expDate - today) / 86400000) : null;
+      var expiryHtml = daysLeft !== null
+        ? (daysLeft < 90 ? '<span class="cell-negative">&#9888; ' + daysLeft + "d</span>" : daysLeft + "d")
+        : "—";
+      var gcHtml  = v.green_channel ? '<span class="green-channel">&#10004; GREEN</span>' : "—";
+      var emdHtml = v.emd_exempt    ? '<span class="emd-exempt">&#10004; EXEMPT</span>'  : "—";
+      return [v.vendor_code, v.name, v.category, v.material_group || "—",
+              gridjs.html(gcHtml), gridjs.html(emdHtml), gridjs.html(expiryHtml)];
     });
-    const vCfg = {
-      columns:[
-        { name:"Vendor ID",    width:"90px"  },
-        { name:"Name",         width:"190px" },
-        { name:"Category",     width:"70px"  },
-        { name:"Material",     width:"140px" },
-        { name:"Green Ch.",    width:"80px"  },
-        { name:"EMD Exempt",   width:"90px"  },
-        { name:"Reg. Expiry",  width:"90px"  },
-      ],
+    var vCfg = {
+      columns:[{name:"Code",width:"90px"},{name:"Name",width:"190px"},{name:"Category",width:"70px"},
+               {name:"Material",width:"140px"},{name:"Green Ch.",width:"80px"},{name:"EMD",width:"80px"},{name:"Expiry",width:"80px"}],
       data:vRows, sort:true, pagination:{ enabled:true, limit:4 },
     };
-    if (!vendorGrid) { vendorGrid = new gridjs.Grid(vCfg); vendorGrid.render(vContainer); }
-    else vendorGrid.updateConfig(vCfg).forceRender();
+    if (!vendorGridInst) { vendorGridInst = new gridjs.Grid(vCfg); vendorGridInst.render(vC); }
+    else vendorGridInst.updateConfig(vCfg).forceRender();
   }
 
-  // Materials grid (ROMIS)
-  renderMaterialsGrid();
+  // ── Materials grid (ROMIS) ────────────────────────────────────────────────
+  renderMaterialsGridFromData(materials);
+  logAudit("VIEW_ACCESS", "Supply Chain & Vendors · Source: Supabase (3 parallel queries)");
 }
 
-function renderMaterialsGrid() {
-  const container = document.getElementById("materialsGrid");
-  if (!container) return;
-  const data = DB.get(KEYS.MATERIALS, []).sort((a,b)=>b.createdAt-a.createdAt);
-  const rows = data.map(m => [
-    m.material, m.heatNo, m.qty, m.project, m.location||"—",
-    new Date(m.createdAt).toLocaleString("en-IN",{ day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
-  ]);
-  const cfg = {
-    columns:[
-      { name:"Material",    width:"180px" },
-      { name:"Heat/Batch",  width:"100px" },
-      { name:"Qty",         width:"60px"  },
-      { name:"Project",     width:"90px"  },
-      { name:"Location",    width:"90px"  },
-      { name:"Logged At",   width:"130px" },
-    ],
+/**
+ * Render the ROMIS material issue grid from a pre-fetched data array.
+ * Separated from renderSupply() so it can also be called after a new INSERT.
+ *
+ * @param {Array} materials - Array of rows from mdl_materials
+ */
+function renderMaterialsGridFromData(materials) {
+  var c = document.getElementById("materialsGrid");
+  if (!c) return;
+
+  var rows = materials.map(function(m) {
+    return [
+      m.material,
+      m.heat_no || "—",
+      m.quantity,
+      m.project_id,
+      m.staging_location || "—",
+      // logged_at is an ISO 8601 timestamp string from Supabase, e.g. "2025-06-01T14:30:00+00:00"
+      new Date(m.logged_at).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
+    ];
+  });
+
+  var cfg = {
+    columns:[{name:"Material",width:"180px"},{name:"Heat/Batch",width:"100px"},{name:"Qty",width:"60px"},
+             {name:"Project",width:"90px"},{name:"Location",width:"90px"},{name:"Logged At",width:"130px"}],
     data:rows, sort:true, pagination:{ enabled:true, limit:5 },
   };
-  if (!materialsGrid) { materialsGrid = new gridjs.Grid(cfg); materialsGrid.render(container); }
-  else materialsGrid.updateConfig(cfg).forceRender();
-  document.getElementById("matIssueCount").textContent = data.length + " ISSUES";
+
+  if (!materialsGridInst) { materialsGridInst = new gridjs.Grid(cfg); materialsGridInst.render(c); }
+  else materialsGridInst.updateConfig(cfg).forceRender();
+
+  var badge = document.getElementById("matIssueCount");
+  if (badge) badge.textContent = materials.length + " ISSUES";
 }
 
-// ─── ROMIS Material logger ──────────────────────────────────────
+// ─── ROMIS Material Logger form wiring ─────────────────────────────────────
+var matLoggerWired = false;
 function wireMaterialLogger() {
-  document.getElementById("logMaterialBtn")?.addEventListener("click", () => {
-    const material  = document.getElementById("matType")?.value;
-    const project   = document.getElementById("matProject")?.value;
-    const heatNo    = document.getElementById("matHeat")?.value.trim();
-    const qty       = parseFloat(document.getElementById("matQty")?.value);
-    const location  = document.getElementById("matLocation")?.value.trim();
-    if (!material || !heatNo || isNaN(qty)) return;
+  if (matLoggerWired) return; matLoggerWired = true;
 
-    // SAP-MM: BAPI_GOODSMVT_CREATE — goods movement type 201
-    const mats = DB.get(KEYS.MATERIALS, []);
-    mats.push({ id:crypto.randomUUID(), material, heatNo, qty, project, location, createdAt:Date.now() });
-    DB.set(KEYS.MATERIALS, mats);
-    renderMaterialsGrid();
+  var btn = document.getElementById("logMaterialBtn");
+  if (!btn) return;
 
-    const msg = document.getElementById("matFormMsg");
-    msg.classList.remove("hidden");
-    setTimeout(() => msg.classList.add("hidden"), 2000);
-    document.getElementById("matHeat").value = "";
-    document.getElementById("matQty").value  = "";
-    document.getElementById("matLocation").value = "";
+  btn.addEventListener("click", async function() {
+    var material = (document.getElementById("matType")?.value     || "").trim();
+    var project  = (document.getElementById("matProject")?.value  || "").trim();
+    var heatNo   = (document.getElementById("matHeat")?.value     || "").trim();
+    var qty      = parseFloat(document.getElementById("matQty")?.value || "");
+    var location = (document.getElementById("matLocation")?.value || "").trim();
 
-    if (currentView === "supply") {
-      document.getElementById("kpi-mat-count").textContent = mats.length;
+    if (!material || !heatNo || isNaN(qty) || qty <= 0) return;
+
+    btn.disabled = true;
+    btn.textContent = "Committing…";
+
+    // INSERT new material issue into Supabase.
+    // API call: POST /rest/v1/mdl_materials
+    const { error } = await DB_API.insertMaterial({
+      material:         material,
+      heat_no:          heatNo,
+      quantity:         qty,
+      project_id:       project,
+      staging_location: location,
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> COMMIT ROMIS ISSUE';
+
+    if (error) { showDbError("ROMIS insert failed: " + error.message); return; }
+
+    logAudit("DATA_CREATE", "ROMIS Issue: " + material + " · " + qty + " units → " + project + " · Supabase");
+
+    var msg = document.getElementById("matFormMsg");
+    if (msg) { msg.classList.remove("hidden"); setTimeout(function() { msg.classList.add("hidden"); }, 2000); }
+
+    // Reset form fields
+    ["matHeat","matQty","matLocation"].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = "";
+    });
+
+    // Re-fetch and re-render materials grid so the new row appears immediately
+    const { data: freshMaterials, error: fetchError } = await DB_API.getMaterials();
+    if (!fetchError) {
+      materialsGridInst = null;
+      renderMaterialsGridFromData(freshMaterials || []);
+      var badge = document.getElementById("kpi-mat-count");
+      if (badge) badge.textContent = (freshMaterials || []).length;
     }
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MODULE 4 · HCM — Workforce + HSE (SAP-HCM + SAP-EHS)
-// ═══════════════════════════════════════════════════════════════════
-let leadershipGrid = null;
-let hseGrid        = null;
-let selectedSev    = "LOW";
 
-// Board & KMP data (SAP-HCM personnel master · RBAC assignments)
-const LEADERSHIP = [
-  { id:"CMD-01", name:"Capt. Jagmohan (Retd.)",       designation:"Chairman & Managing Director (CMD)",         access:"Global Enterprise · All Modules L1",           clearance:"SECRET" },
-  { id:"DIR-SB", name:"Mr. Biju George",               designation:"Director (Shipbuilding)",                    access:"Production · PM · Quality Assurance",           clearance:"CONFIDENTIAL" },
-  { id:"DIR-FI", name:"Mr. Ruchir Agrawal",            designation:"Director (Finance) & CFO",                   access:"Financial Ledger · Procurement · Corporate Audit",clearance:"CONFIDENTIAL" },
-  { id:"DIR-SM", name:"Cmde Shailesh B Jamgaonkar",   designation:"Director (Submarine & Heavy Engineering)",    access:"Submarine Div · Heavy Mfg · IPMS",              clearance:"SECRET" },
-  { id:"DIR-CP", name:"Cdr. Vasudev Puranik",          designation:"Director (Corporate Planning & Personnel)",   access:"HR · Strategic Planning · Labor Allocation",    clearance:"RESTRICTED" },
-  { id:"GM-CIT", name:"Mr. Chandra Vijay Shrivastava", designation:"GM (F-CA) & GM (CIT)",                       access:"Financial Control · IT Systems · MIS Admin",    clearance:"CONFIDENTIAL" },
-  { id:"GM-FPS", name:"Mr. Saurabh Kumar Gupta",       designation:"GM (F-P&S)",                                  access:"Financial Planning & Strategy",                 clearance:"RESTRICTED" },
-  { id:"GM-PSO", name:"Mr. Sanjay Kumar Singh",        designation:"GM (PS-Offshore Projects & MOD KILO)",        access:"Offshore Projects · Submarine Refit WOs",       clearance:"SECRET" },
-  { id:"GM-QSI", name:"Mr. E R Thomas",                designation:"GM (SB-QA & SI)",                            access:"Quality Assurance · Systems Integration · ISO",  clearance:"CONFIDENTIAL" },
-  { id:"GM-INF", name:"Mr. P Dhanraj",                 designation:"GM (SB-Works/NHY)",                          access:"Shipyard Infrastructure · Berth & Dock Mgmt",   clearance:"RESTRICTED" },
-  { id:"ED-HR",  name:"Mr. Arun Kumar Chand",          designation:"Executive Director / HOD (HR)",              access:"HR Master · Personnel Demographics · Payroll",   clearance:"RESTRICTED" },
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 11: HCM — Human Capital & HSE (SAP-HCM + SAP-EHS)
+//
+// Migration note: renderHCM() is now async. HSE incidents are fetched from
+// mdl_hse in Supabase. Leadership data remains static (hardcoded) as it
+// doesn't need a separate table for this prototype.
+// ═══════════════════════════════════════════════════════════════════════════
+
+var LEADERSHIP = [
+  { id:"CMD-01", name:"Capt. Jagmohan (Retd.)",       designation:"Chairman & Managing Director (CMD)",        access:"Global Enterprise · All Modules",  clearance:"SECRET"       },
+  { id:"DIR-SB", name:"Mr. Biju George",               designation:"Director (Shipbuilding)",                   access:"Production · PM · QA",             clearance:"CONFIDENTIAL" },
+  { id:"DIR-FI", name:"Mr. Ruchir Agrawal",            designation:"Director (Finance) & CFO",                  access:"Financial Ledger · Audit",          clearance:"CONFIDENTIAL" },
+  { id:"DIR-SM", name:"Cmde Shailesh B Jamgaonkar",   designation:"Director (Submarine & Heavy Engineering)",   access:"Submarine · IPMS · Heavy Mfg",     clearance:"SECRET"       },
+  { id:"DIR-CP", name:"Cdr. Vasudev Puranik",          designation:"Director (Corporate Planning & Personnel)",  access:"HR · Strategic Planning",           clearance:"RESTRICTED"   },
+  { id:"GM-CIT", name:"Mr. Chandra Vijay Shrivastava", designation:"GM (F-CA) & GM (CIT)",                      access:"Financial Control · IT · MIS",     clearance:"CONFIDENTIAL" },
+  { id:"GM-FPS", name:"Mr. Saurabh Kumar Gupta",       designation:"GM (F-P&S)",                                 access:"Financial Planning & Strategy",    clearance:"RESTRICTED"   },
+  { id:"GM-PSO", name:"Mr. Sanjay Kumar Singh",        designation:"GM (PS-Offshore & MOD KILO)",               access:"Offshore Projects · Sub Refit",    clearance:"SECRET"       },
+  { id:"GM-QSI", name:"Mr. E R Thomas",                designation:"GM (SB-QA & SI)",                           access:"Quality Assurance · ISO",           clearance:"CONFIDENTIAL" },
+  { id:"GM-INF", name:"Mr. P Dhanraj",                 designation:"GM (SB-Works/NHY)",                         access:"Infrastructure · Berth & Dock",    clearance:"RESTRICTED"   },
+  { id:"ED-HR",  name:"Mr. Arun Kumar Chand",          designation:"Executive Director / HOD (HR)",             access:"HR Master · Payroll · Diversity",   clearance:"RESTRICTED"   },
 ];
 
-function renderHCM() {
-  // HSE KPIs
-  const logs   = DB.get(KEYS.HSE, []);
-  const nmCount = logs.filter(l=>l.logType==="near-miss").length;
-  const totalHrs = logs.reduce((s,l)=>s+(parseFloat(l.hours)||0), 0);
-  document.getElementById("kpi-near-miss").textContent  = nmCount;
-  document.getElementById("kpi-subcon-hrs").textContent = totalHrs.toLocaleString("en-IN");
-  document.getElementById("hseEntryCount").textContent  = logs.length + " ENTRIES";
+function clearanceCellHtml(clearance) {
+  var classMap = { SECRET:"cell-negative", CONFIDENTIAL:"cell-neutral", RESTRICTED:"cell-positive" };
+  return '<span class="' + (classMap[clearance] || "") + '">' + clearance + '</span>';
+}
 
-  // Leadership grid
-  const lContainer = document.getElementById("leadershipGrid");
-  if (lContainer) {
-    const lRows = LEADERSHIP.map(p => [
-      p.id, p.name, p.designation,
-      p.access,
-      gridjs.html((() => {
-        const m = { SECRET:"cell-negative", CONFIDENTIAL:"cell-neutral", RESTRICTED:"cell-positive" };
-        return `<span class="${m[p.clearance]||""}">${p.clearance}</span>`;
-      })()),
-    ]);
-    const lCfg = {
-      columns:[
-        { name:"Employee ID",   width:"80px"  },
-        { name:"Name",          width:"180px" },
-        { name:"Designation",   width:"240px" },
-        { name:"MIS Access (RBAC)", width:"260px" },
-        { name:"Clearance",     width:"100px" },
-      ],
+async function renderHCM() {
+  // Fetch all HSE incidents from Supabase.
+  // API call: GET /rest/v1/mdl_hse?select=*&order=logged_at.desc
+  const { data: logs, error } = await DB_API.getHSE();
+  if (error) { showDbError("HSE fetch failed: " + error.message); return; }
+
+  var hseData   = logs || [];
+  var nmCount   = hseData.filter(function(l) { return l.log_type === "near-miss"; }).length;
+  var totalHrs  = hseData.reduce(function(s, l) { return s + (parseFloat(l.man_hours) || 0); }, 0);
+
+  var setKpi = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  setKpi("kpi-near-miss",  nmCount);
+  setKpi("kpi-subcon-hrs", totalHrs.toLocaleString("en-IN"));
+  setKpi("hseEntryCount",  hseData.length + " ENTRIES");
+
+  // ── Leadership grid (static data — no Supabase call needed) ──────────────
+  var lC = document.getElementById("leadershipGrid");
+  if (lC) {
+    var lRows = LEADERSHIP.map(function(p) {
+      return [p.id, p.name, p.designation, p.access, gridjs.html(clearanceCellHtml(p.clearance))];
+    });
+    var lCfg = {
+      columns:[{name:"Employee ID",width:"80px"},{name:"Name",width:"180px"},{name:"Designation",width:"240px"},
+               {name:"MIS Access (RBAC)",width:"230px"},{name:"Clearance",width:"100px"}],
       data:lRows, sort:true, pagination:{ enabled:true, limit:6 },
     };
-    if (!leadershipGrid) { leadershipGrid = new gridjs.Grid(lCfg); leadershipGrid.render(lContainer); }
-    else leadershipGrid.updateConfig(lCfg).forceRender();
+    if (!leadershipGridInst) { leadershipGridInst = new gridjs.Grid(lCfg); leadershipGridInst.render(lC); }
+    else leadershipGridInst.updateConfig(lCfg).forceRender();
   }
 
-  // HSE incident grid
-  renderHSEGrid();
+  // ── HSE incident grid ─────────────────────────────────────────────────────
+  renderHSEGridFromData(hseData);
+  logAudit("VIEW_ACCESS", "Human Capital & HSE · Source: Supabase mdl_hse");
 }
 
-function renderHSEGrid() {
-  const container = document.getElementById("hseGrid");
-  if (!container) return;
-  const logs = DB.get(KEYS.HSE, []).sort((a,b)=>b.createdAt-a.createdAt);
-  const typeMap = { "near-miss":"Near-Miss","subcon":"Sub-Con Hrs","hazard":"Hazard Obs.","toolbox":"Toolbox Talk","permit":"Permit-WTW" };
-  const rows = logs.map(l => [
-    typeMap[l.logType]||l.logType,
-    l.shift,
-    l.description.length>55 ? l.description.substring(0,55)+"…" : l.description,
-    l.personnel||"—",
-    l.hours ? l.hours+" hrs" : "—",
-    gridjs.html(`<span class="sev-tag ${l.severity}">${l.severity}</span>`),
-    new Date(l.createdAt).toLocaleString("en-IN",{ day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
-  ]);
-  const cfg = {
-    columns:[
-      { name:"Type",       width:"90px"  },
-      { name:"Zone",       width:"100px" },
-      { name:"Activity",   width:"240px" },
-      { name:"Personnel",  width:"85px"  },
-      { name:"Hours",      width:"70px"  },
-      { name:"Severity",   width:"80px"  },
-      { name:"Logged At",  width:"120px" },
-    ],
+function renderHSEGridFromData(hseData) {
+  var c = document.getElementById("hseGrid");
+  if (!c) return;
+  var typeMap = { "near-miss":"Near-Miss","subcon":"Sub-Con Hrs","hazard":"Hazard Obs.","toolbox":"Toolbox Talk","permit":"Permit-WTW" };
+  var rows = hseData.map(function(l) {
+    var desc    = (l.description || "").length > 55 ? l.description.substring(0, 55) + "…" : l.description;
+    var sevHtml = '<span class="sev-tag ' + l.severity + '">' + l.severity + '</span>';
+    return [
+      typeMap[l.log_type] || l.log_type,
+      l.shift_zone,
+      desc,
+      l.personnel_id || "—",
+      l.man_hours ? l.man_hours + " hrs" : "—",
+      gridjs.html(sevHtml),
+      new Date(l.logged_at).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }),
+    ];
+  });
+  var cfg = {
+    columns:[{name:"Type",width:"90px"},{name:"Zone",width:"100px"},{name:"Activity",width:"240px"},
+             {name:"Personnel",width:"85px"},{name:"Hours",width:"70px"},{name:"Severity",width:"80px"},{name:"Logged At",width:"120px"}],
     data:rows, sort:true, pagination:{ enabled:true, limit:5 },
   };
-  if (!hseGrid) { hseGrid = new gridjs.Grid(cfg); hseGrid.render(container); }
-  else hseGrid.updateConfig(cfg).forceRender();
+  if (!hseGridInst) { hseGridInst = new gridjs.Grid(cfg); hseGridInst.render(c); }
+  else hseGridInst.updateConfig(cfg).forceRender();
 }
 
-// Severity selector
+var sevWired = false;
 function wireSeveritySelector() {
-  document.querySelectorAll(".sev-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".sev-btn").forEach(b=>b.classList.remove("active"));
+  if (sevWired) return; sevWired = true;
+  var btns = document.querySelectorAll(".sev-btn");
+  btns.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      btns.forEach(function(b) { b.classList.remove("active"); });
       btn.classList.add("active");
       selectedSev = btn.dataset.sev;
     });
   });
 }
 
-// HSE form
+var selectedSev = "LOW";
+var hseWired    = false;
 function wireHSEForm() {
-  document.getElementById("logHseBtn")?.addEventListener("click", () => {
-    const logType    = document.getElementById("hseLogType")?.value;
-    const shift      = document.getElementById("hseShift")?.value;
-    const description= document.getElementById("hseDescription")?.value.trim();
-    const personnel  = document.getElementById("hsePersonnel")?.value.trim();
-    const hours      = parseFloat(document.getElementById("hseHours")?.value)||null;
+  if (hseWired) return; hseWired = true;
+
+  var btn = document.getElementById("logHseBtn");
+  if (!btn) return;
+
+  btn.addEventListener("click", async function() {
+    var logType     = document.getElementById("hseLogType")?.value || "near-miss";
+    var shiftZone   = document.getElementById("hseShift")?.value   || "A-East";
+    var description = (document.getElementById("hseDescription")?.value || "").trim();
+    var personnel   = (document.getElementById("hsePersonnel")?.value   || "").trim();
+    var hours       = parseFloat(document.getElementById("hseHours")?.value || "") || null;
+
     if (!description) { document.getElementById("hseDescription")?.focus(); return; }
 
-    // SAP-EHS: BAPI_EHS_INCIDENT_CREATE equivalent
-    const logs = DB.get(KEYS.HSE, []);
-    logs.push({ id:crypto.randomUUID(), logType, shift, description, personnel:personnel||"", hours:hours||"", severity:selectedSev, createdAt:Date.now() });
-    DB.set(KEYS.HSE, logs);
-    renderHCM();
+    btn.disabled = true;
+    btn.textContent = "Committing…";
 
-    const msg = document.getElementById("hseFormMsg");
-    msg.classList.remove("hidden");
-    setTimeout(()=>msg.classList.add("hidden"),2000);
-    document.getElementById("hseDescription").value = "";
-    document.getElementById("hsePersonnel").value   = "";
-    document.getElementById("hseHours").value       = "";
+    // INSERT new HSE entry into Supabase.
+    // API call: POST /rest/v1/mdl_hse
+    const { error } = await DB_API.insertHSE({
+      log_type:     logType,
+      shift_zone:   shiftZone,
+      description:  description,
+      personnel_id: personnel || null,
+      man_hours:    hours,
+      severity:     selectedSev,
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> COMMIT LOG ENTRY';
+
+    if (error) { showDbError("HSE insert failed: " + error.message); return; }
+
+    logAudit("DATA_CREATE", "HSE Log: " + logType + " · " + shiftZone + " · Severity: " + selectedSev + " · Supabase");
+
+    var msg = document.getElementById("hseFormMsg");
+    if (msg) { msg.classList.remove("hidden"); setTimeout(function() { msg.classList.add("hidden"); }, 2000); }
+
+    ["hseDescription","hsePersonnel","hseHours"].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = "";
+    });
+
+    // Re-fetch all HSE records from Supabase and re-render the grid
+    const { data: freshHSE, error: fetchError } = await DB_API.getHSE();
+    if (!fetchError) {
+      var newData = freshHSE || [];
+      var nmCount  = newData.filter(function(l) { return l.log_type === "near-miss"; }).length;
+      var totalHrs = newData.reduce(function(s, l) { return s + (parseFloat(l.man_hours) || 0); }, 0);
+      var setKpi = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+      setKpi("kpi-near-miss",  nmCount);
+      setKpi("kpi-subcon-hrs", totalHrs.toLocaleString("en-IN"));
+      setKpi("hseEntryCount",  newData.length + " ENTRIES");
+      hseGridInst = null;
+      renderHSEGridFromData(newData);
+    }
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MODULE 5 · COMPLIANCE — (static render, no CRUD needed)
-// ═══════════════════════════════════════════════════════════════════
-function renderCompliance() {
-  // No dynamic data needed — all values hardcoded from audited docs
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── PART 12: AUDIT LOG (session-scoped localStorage — unchanged)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function renderAuditGrid() {
+  var c = document.getElementById("auditGrid");
+  if (!c) return;
+  var logs = Session.getAudit();
+  var rows = logs.map(function(l) {
+    return [
+      new Date(l.ts).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", second:"2-digit" }),
+      l.userId,
+      l.role,
+      gridjs.html(clearanceCellHtml(l.clearance)),
+      l.action,
+      l.detail,
+    ];
+  });
+  var cfg = {
+    columns:[{name:"Timestamp",width:"140px"},{name:"User",width:"160px"},{name:"Role",width:"120px"},
+             {name:"Clearance",width:"100px"},{name:"Action",width:"120px"},{name:"Detail",width:"280px"}],
+    data:rows, sort:true, pagination:{ enabled:true, limit:10 },
+  };
+  if (!auditGridInst) { auditGridInst = new gridjs.Grid(cfg); auditGridInst.render(c); }
+  else auditGridInst.updateConfig(cfg).forceRender();
+  updateAuditBadge();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// BOOTSTRAP — DOMContentLoaded
-// ═══════════════════════════════════════════════════════════════════
-document.addEventListener("DOMContentLoaded", () => {
-  bootstrapMockData();
-  startClock();
-  wireNavigation();
-  wireProjectModal();
-  wireMaterialLogger();
-  wireSeveritySelector();
-  wireHSEForm();
-  setActiveView("ess");
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── INIT ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+document.addEventListener("DOMContentLoaded", function() {
+  // Validate that Supabase credentials have been configured before rendering
+  if (SUPABASE_URL === "YOUR_SUPABASE_URL_HERE" || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON_KEY_HERE") {
+    document.body.innerHTML = [
+      '<div style="display:flex;align-items:center;justify-content:center;height:100vh;',
+      'background:#0b0e14;font-family:\'IBM Plex Mono\',monospace;flex-direction:column;gap:16px;">',
+      '<div style="color:#ff4d4d;font-size:14px;"><i class="fas fa-triangle-exclamation"></i> &nbsp;CONFIGURATION REQUIRED</div>',
+      '<div style="color:#8a94a6;font-size:12px;max-width:480px;text-align:center;line-height:1.8;">',
+      'Open <strong style="color:#e8edf5">app.js</strong> and replace<br>',
+      '<code style="color:#2075ff">SUPABASE_URL</code> and <code style="color:#2075ff">SUPABASE_ANON_KEY</code><br>',
+      'with your actual Supabase project credentials.<br><br>',
+      '<span style="color:#505a6e;font-size:10px;">Find them at: app.supabase.com → Your Project → Settings → API</span>',
+      '</div></div>',
+    ].join("");
+    return;
+  }
+
+  buildRBACOverlay();
 });
