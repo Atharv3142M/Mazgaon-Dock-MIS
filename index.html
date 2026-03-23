@@ -1,17 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- ═══════════════════════════════════════════════════════════════
+       MDL COMMAND · Digital Shipyard MIS v6.0
+       Script/stylesheet load order is critical — do NOT reorder.
+
+       LOAD ORDER EXPLANATION:
+       1. Tailwind CSS     — layout utility classes (no JS, safe first)
+       2. Google Fonts     — preconnect hints before font request
+       3. Font Awesome     — icon font
+       4. Grid.js CSS      — must load before Grid.js UMD script
+       5. Grid.js UMD      — exposes window.gridjs
+       6. Chart.js         — exposes window.Chart
+       7. Supabase JS v2   — exposes window.supabase (MUST be before app.js)
+       8. style.css        — custom dark theme (overrides Grid.js theme)
+       9. app.js (body)    — loaded at end of <body> after DOM is ready
+       ═══════════════════════════════════════════════════════════════ -->
   <meta charset="UTF-8" />
-  <title>MDL COMMAND · Digital Shipyard MIS v5.0</title>
+  <title>MDL COMMAND · Digital Shipyard MIS v6.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- 1. Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 2. Google Fonts: IBM Plex Mono (data) + IBM Plex Sans (UI) + Rajdhani (display) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- 3. Font Awesome 6 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+
+  <!-- 4. Grid.js CSS theme (before Grid.js script) -->
   <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
+
+  <!-- 5. Grid.js UMD — exposes window.gridjs -->
   <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+
+  <!-- 6. Chart.js — exposes window.Chart -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- 7. Supabase JS Client v2 (UMD build) — exposes window.supabase
+       This MUST appear before app.js. app.js calls window.supabase.createClient()
+       on startup; if this script is missing or placed after app.js the
+       RBAC overlay will render as unstyled plain text and all DB calls fail.
+       CDN: jsDelivr (reliable, globally cached, SRI-safe) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <!-- 8. Custom dark control-room theme (overrides Grid.js mermaid defaults) -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
